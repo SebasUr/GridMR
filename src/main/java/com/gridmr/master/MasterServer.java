@@ -84,14 +84,18 @@ public class MasterServer {
                             String input = getEnvOrDefault("MR_INPUT_S3_URI", "s3://gridmr/input.txt");
                             int nReducers = Integer.parseInt(getEnvOrDefault("MR_N_REDUCERS", "1"));
 
-                            AssignTask assign = AssignTask.newBuilder()
+                            AssignTask.Builder ab = AssignTask.newBuilder()
                                     .setTaskId("map-0")
                                     .setJobId(jobId)
                                     .setType(AssignTask.TaskType.MAP)
                                     .addSplitUris(input)
                                     .setReducerId(0)
-                                    .setNReducers(nReducers)
-                                    .build();
+                                    .setNReducers(nReducers);
+                            String binUri = getEnvOrDefault("MR_MAP_BIN_URI", "s3://gridmr/map.cc");
+                            if (!binUri.isEmpty()) {
+                                ab.setBinaryUri(binUri);
+                            }
+                            AssignTask assign = ab.build();
                             MasterToWorker out = MasterToWorker.newBuilder().setAssign(assign).build();
                             responseObserver.onNext(out);
                             System.out.println("Assigned demo MAP task to " + info.getWorkerId());
