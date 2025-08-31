@@ -5,6 +5,11 @@ RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app
+COPY --from=build /src/target/gridmr-master.jar /app/gridmr-master.jar
+EXPOSE 50051
+ENV MASTER_PORT=50051
+ENTRYPOINT ["java","-jar","/app/gridmr-master.jar"]
+WORKDIR /app
 COPY --from=build /src/target/gridmr-master*.jar /app/gridmr-master.jar
 EXPOSE 50051
 ENV MASTER_PORT=50051

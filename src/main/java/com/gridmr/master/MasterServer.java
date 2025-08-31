@@ -23,7 +23,9 @@ public class MasterServer {
     private final int port;
     private Server server;
 
-    public MasterServer(int port) { this.port = port; }
+    public MasterServer(int port) {
+        this.port = port;
+    }
 
     public void start() throws IOException {
         server = ServerBuilder.forPort(port)

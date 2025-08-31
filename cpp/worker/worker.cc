@@ -25,7 +25,7 @@ static std::string envOr(const char* k, const char* d){
 
 static void do_map(const std::string& s3_uri, int reducer_id, int n_reducers) {
   // Placeholder: here you'd read from MinIO (S3 API) and produce partitions
-  std::cout << "[worker] MAP reading " << s3_uri << ", reducers=" << n_reducers << "\n";
+  std::cout << "[worker] MAP reading " << s3_uri << ", reducers=" << n_reducers << std::endl;
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
@@ -49,9 +49,10 @@ class WorkerClient {
 
     MasterToWorker msg;
     while (stream->Read(&msg)) {
+      std::cerr << "[worker] Received message from master\n";
       if (msg.has_assign()) {
         const AssignTask& t = msg.assign();
-        std::cout << "[worker] Received task " << t.task_id() << " type=" << t.type() << "\n";
+        std::cout << "[worker] Received task " << t.task_id() << " type=" << t.type() << std::endl;
         if (t.type() == AssignTask::MAP && t.split_uris_size() > 0) {
           do_map(t.split_uris(0), t.reducer_id(), t.n_reducers());
           WorkerToMaster statusMsg;
@@ -67,7 +68,7 @@ class WorkerClient {
 
     Status s = stream->Finish();
     if (!s.ok()) {
-      std::cerr << "Stream finished with error: " << s.error_message() << "\n";
+      std::cerr << "Stream finished with error: " << s.error_message() << std::endl;
     }
   }
 
@@ -79,7 +80,18 @@ int main(int argc, char** argv) {
   std::string host = envOr("MASTER_HOST", "localhost");
   std::string port = envOr("MASTER_PORT", "50051");
   std::string target = host + ":" + port;
-  WorkerClient c(grpc::CreateChannel(target, grpc::InsecureChannelCredentials()));
+  auto channel = grpc::CreateChannel(target, grpc::InsecureChannelCredentials());
+  // wait 4 master
+  int attempts = 0;
+  while (true) {
+    auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(5);
+    if (channel->WaitForConnected(deadline)) break;
+    attempts++;
+    std::cerr << "[worker] Waiting for master at " << target << " (attempt " << attempts << ")...\n";
+    std::this_thread::sleep_for(std::chrono::seconds(std::min(5, attempts)));
+  }
+
+  WorkerClient c(channel);
   c.Run();
   return 0;
 }
