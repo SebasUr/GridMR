@@ -1,4 +1,3 @@
-
 syntax = "proto3";
 package gridmr;
 
@@ -10,6 +9,8 @@ message WorkerInfo {
   string worker_id = 1;
   string host = 2;
   int32 cpu = 3;
+  float cpu_usage = 4; // Porcentaje de uso de CPU (0.0 - 100.0)
+  float ram_usage = 5; // Porcentaje de uso de RAM
 }
 
 message AssignTask {
