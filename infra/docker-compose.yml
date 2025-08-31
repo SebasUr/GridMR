@@ -1,0 +1,53 @@
+version: "3.8"
+services:
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address :9001
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: gridmr
+      POSTGRES_USER: gridmr
+      POSTGRES_PASSWORD: gridmr
+    ports: ["5432:5432"]
+
+  master:
+    build:
+      context: ..
+      dockerfile: infra/master/Dockerfile
+    depends_on: [minio, postgres]
+    environment:
+      MASTER_PORT: 50051
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MR_INPUT_S3_URI: s3://gridmr/input.txt
+      MR_N_REDUCERS: "1"
+    ports:
+      - "50051:50051"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/worker/Dockerfile
+    depends_on: [minio, master]
+    environment:
+      MASTER_HOST: master
+      MASTER_PORT: 50051
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    deploy:
+      replicas: 1
+
+volumes:
+  minio-data:

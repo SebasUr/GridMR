@@ -1,0 +1,15 @@
+/home/saur/Documents/codeProjects/GridMR/src/main/java/com/gridmr/master/MasterServer.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/grpc-java/com/gridmr/proto/ControlServiceGrpc.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/AssignTask.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/AssignTaskOrBuilder.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/GridmrProto.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/MasterToWorker.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/MasterToWorkerOrBuilder.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/PartUploaded.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/PartUploadedOrBuilder.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/TaskStatus.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/TaskStatusOrBuilder.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/WorkerInfo.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/WorkerInfoOrBuilder.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/WorkerToMaster.java
+/home/saur/Documents/codeProjects/GridMR/target/generated-sources/protobuf/java/com/gridmr/proto/WorkerToMasterOrBuilder.java
