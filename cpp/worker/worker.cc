@@ -5,6 +5,7 @@
 #include <vector>
 #include <fstream>
 #include <cstdio>
+#include <sstream>
 
 #ifdef GRIDMR_HAVE_AWSSDK
 #include <aws/core/Aws.h>
@@ -201,8 +202,10 @@ static void do_map(const std::string& s3_uri, const std::string& binary_uri, int
     std::cerr << "[worker] Failed to run mapper" << std::endl;
     return;
   }
-  // Simple partition counters for demo
-  std::vector<size_t> counts(std::max(1, n_reducers), 0);
+  // Simple partition counters and buffers for demo
+  int R = std::max(1, n_reducers);
+  std::vector<size_t> counts(R, 0);
+  std::vector<std::ostringstream> parts(R);
   char* line = nullptr; size_t len = 0; ssize_t nread;
   std::cout << "[MAPPER_OUT_BEGIN]" << std::endl;
   while (true) {
@@ -218,17 +221,38 @@ static void do_map(const std::string& s3_uri, const std::string& binary_uri, int
     auto tab = s.find('\t');
     if (tab == std::string::npos) continue;
     std::string key = s.substr(0, tab);
+    std::string val = s.substr(tab+1);
     // partition by hash
     std::hash<std::string> h;
-    int pid = static_cast<int>(h(key) % std::max(1, n_reducers));
+    int pid = static_cast<int>(h(key) % R);
     counts[pid]++;
+    parts[pid] << key << '\t' << val;
   }
   std::cout << "[MAPPER_OUT_END]" << std::endl;
   pclose(pipe);
-  // Log summary
-  for (int i = 0; i < (int)counts.size(); ++i) {
+  // Write per-partition files and log
+  for (int i = 0; i < R; ++i) {
+    std::string outPath = "/tmp/to-reduce-input-" + std::to_string(i) + ".txt";
+    std::ofstream ofs(outPath, std::ios::binary);
+    std::string data = parts[i].str();
+    ofs.write(data.data(), (std::streamsize)data.size());
+    ofs.close();
     std::cerr << "[worker] partition " << i << " records: " << counts[i] << std::endl;
   }
+}
+
+static bool upload_file_to_minio(const std::string& local_path, const std::string& s3_uri){
+  // Simple upload via awscli to MinIO
+  std::string endpoint = envOr("MINIO_ENDPOINT", "http://minio:9000");
+  std::string access = envOr("MINIO_ACCESS_KEY", "minioadmin");
+  std::string secret = envOr("MINIO_SECRET_KEY", "minioadmin");
+  std::string cmd = std::string("AWS_ACCESS_KEY_ID=") + access +
+                    " AWS_SECRET_ACCESS_KEY=" + secret +
+                    " aws --no-cli-pager --endpoint-url " + endpoint +
+                    " s3 cp '" + local_path + "' '" + s3_uri + "'";
+  std::cerr << "[worker] awscli upload: " << cmd << std::endl;
+  int rc = std::system(cmd.c_str());
+  return rc == 0;
 }
 
 class WorkerClient {
@@ -259,12 +283,54 @@ class WorkerClient {
           for (int i = 0; i < t.split_uris_size(); ++i) {
             do_map(t.split_uris(i), t.binary_uri(), t.reducer_id(), t.n_reducers());
           }
+          // After mapping, upload partition files and notify master
+          int R = std::max(1, t.n_reducers());
+          for (int pid = 0; pid < R; ++pid) {
+            std::string local = "/tmp/to-reduce-input-" + std::to_string(pid) + ".txt";
+            // Build s3 path: s3://<bucket>/intermediate/<jobid>/part-<pid>-<taskid>.txt
+            // For MVP, derive bucket from the input split URI bucket
+            std::string split = t.split_uris(0);
+            S3Loc loc; if (!parse_s3_uri(split, loc)) loc.bucket = "gridmr";
+            std::string dest = std::string("s3://") + loc.bucket + "/intermediate/" + t.job_id() + "/part-" + std::to_string(pid) + "-" + t.task_id() + ".txt";
+            if (upload_file_to_minio(local, dest)) {
+              WorkerToMaster partMsg;
+              auto *p = partMsg.mutable_part();
+              p->set_job_id(t.job_id());
+              // try to parse map id from task_id like "map-<id>"
+              int mid = 0; try { mid = std::stoi(std::string(t.task_id()).substr(4)); } catch (...) {}
+              p->set_map_id(mid);
+              p->set_partition_id(pid);
+              p->set_uri(dest);
+              stream->Write(partMsg);
+            } else {
+              std::cerr << "[worker] upload failed for partition " << pid << std::endl;
+            }
+          }
           WorkerToMaster statusMsg;
           TaskStatus* st = statusMsg.mutable_status();
           st->set_task_id(t.task_id());
           st->set_state(TaskStatus::COMPLETED);
           st->set_progress(100);
           st->set_message("done");
+          stream->Write(statusMsg);
+        }
+        if (t.type() == AssignTask::REDUCE && t.split_uris_size() > 0) {
+          // For now, only download inputs to verify integrity
+          for (int i = 0; i < t.split_uris_size(); ++i) {
+            std::string in = t.split_uris(i);
+            std::string dest = std::string("/tmp/reduce-input-") + std::to_string(i) + ".txt";
+            if (!s3_download_to_file(in, dest)) {
+              std::cerr << "[worker] reduce input download failed: " << in << std::endl;
+            } else {
+              std::cerr << "[worker] reduce input downloaded: " << dest << std::endl;
+            }
+          }
+          WorkerToMaster statusMsg;
+          TaskStatus* st = statusMsg.mutable_status();
+          st->set_task_id(t.task_id());
+          st->set_state(TaskStatus::COMPLETED);
+          st->set_progress(100);
+          st->set_message("reduce fetched inputs");
           stream->Write(statusMsg);
         }
       }

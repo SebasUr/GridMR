@@ -31,7 +31,7 @@ services:
       MINIO_SECRET_KEY: minioadmin
       # MR_INPUT_S3_URIS: s3.//gridmr/input.txt
       MR_INPUT_S3_URIS: s3://gridmr/input-001.txt,s3://gridmr/input-002.txt
-      MR_N_REDUCERS: "1"
+      MR_N_REDUCERS: "2"
     ports:
       - "50051:50051"
 
@@ -47,7 +47,7 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
     deploy:
-      replicas: 2
+      replicas: 4
 
 volumes:
   minio-data:
