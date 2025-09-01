@@ -29,7 +29,8 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
-      MR_INPUT_S3_URI: s3://gridmr/input.txt
+      # MR_INPUT_S3_URIS: s3.//gridmr/input.txt
+      MR_INPUT_S3_URIS: s3://gridmr/input-001.txt,s3://gridmr/input-002.txt
       MR_N_REDUCERS: "1"
     ports:
       - "50051:50051"
@@ -46,7 +47,7 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
     deploy:
-      replicas: 1
+      replicas: 2
 
 volumes:
   minio-data:

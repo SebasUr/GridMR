@@ -176,6 +176,20 @@ static void do_map(const std::string& s3_uri, const std::string& binary_uri, int
     std::string file = (pos == std::string::npos) ? s3_uri : s3_uri.substr(pos + 1);
     input_path = prefix + "/" + file;
   }
+  // Dump input content to stdout (debug)
+  {
+    std::ifstream fin(input_path);
+    if (fin) {
+      std::cout << "[INPUT_BEGIN]" << std::endl;
+      std::string line;
+      while (std::getline(fin, line)) {
+        std::cout << line << std::endl;
+      }
+      std::cout << "[INPUT_END]" << std::endl;
+    } else {
+      std::cerr << "[worker] Unable to open input file to print: " << input_path << std::endl;
+    }
+  }
   // If we have a binary_uri, download and use it; else use embedded /usr/local/bin/map
   std::string mapper = "/usr/local/bin/map";
   std::string downloaded;
@@ -190,10 +204,16 @@ static void do_map(const std::string& s3_uri, const std::string& binary_uri, int
   // Simple partition counters for demo
   std::vector<size_t> counts(std::max(1, n_reducers), 0);
   char* line = nullptr; size_t len = 0; ssize_t nread;
+  std::cout << "[MAPPER_OUT_BEGIN]" << std::endl;
   while (true) {
     char buf[4096];
     if (!fgets(buf, sizeof(buf), pipe)) break;
     std::string s(buf);
+    // echo mapper output
+    if (!s.empty() && s.back() == '\n') s.pop_back();
+    std::cout << s << std::endl;
+    // restore newline for parsing if needed
+    s.push_back('\n');
     // Parse key\tvalue
     auto tab = s.find('\t');
     if (tab == std::string::npos) continue;
@@ -203,6 +223,7 @@ static void do_map(const std::string& s3_uri, const std::string& binary_uri, int
     int pid = static_cast<int>(h(key) % std::max(1, n_reducers));
     counts[pid]++;
   }
+  std::cout << "[MAPPER_OUT_END]" << std::endl;
   pclose(pipe);
   // Log summary
   for (int i = 0; i < (int)counts.size(); ++i) {
@@ -235,7 +256,9 @@ class WorkerClient {
         const AssignTask& t = msg.assign();
         std::cout << "[worker] Received task " << t.task_id() << " type=" << t.type() << std::endl;
         if (t.type() == AssignTask::MAP && t.split_uris_size() > 0) {
-          do_map(t.split_uris(0), t.binary_uri(), t.reducer_id(), t.n_reducers());
+          for (int i = 0; i < t.split_uris_size(); ++i) {
+            do_map(t.split_uris(i), t.binary_uri(), t.reducer_id(), t.n_reducers());
+          }
           WorkerToMaster statusMsg;
           TaskStatus* st = statusMsg.mutable_status();
           st->set_task_id(t.task_id());
