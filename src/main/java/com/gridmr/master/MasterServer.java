@@ -128,7 +128,12 @@ public class MasterServer {
                     }
                     if (msg.hasStatus()) {
                         TaskStatus st = msg.getStatus();
-                        System.out.printf("Status from %s: %s %.1f%% %s%n", st.getTaskId(), st.getState(), st.getProgress(), st.getMessage());
+                        String m = st.getMessage();
+                        if (m != null && m.startsWith("result_uri=")) {
+                            System.out.printf("Status from %s: %s %.1f%% result=%s%n", st.getTaskId(), st.getState(), st.getProgress(), m.substring("result_uri=".length()));
+                        } else {
+                            System.out.printf("Status from %s: %s %.1f%%%s%n", st.getTaskId(), st.getState(), st.getProgress(), (m==null||m.isEmpty()?"":" msg="+m));
+                        }
                         if (st.getState() == TaskStatus.State.COMPLETED) {
                             // Mark worker idle and assign next split if available
                             busy[0] = false;
@@ -200,6 +205,10 @@ public class MasterServer {
                                 .setType(AssignTask.TaskType.REDUCE)
                                 .setReducerId(pid)
                                 .setNReducers(nReducers);
+                        String reduceBin = getEnvOrDefault("MR_REDUCE_BIN_URI", "s3://gridmr/reduce.cc");
+                        if (!reduceBin.isEmpty()) {
+                            rb.setBinaryUri(reduceBin);
+                        }
                         // Derive bucket from MR_INPUT_S3_URIS (or MR_INPUT_S3_URI)
                         String example = getEnvOrDefault("MR_INPUT_S3_URI", "");
                         if (example.contains(",")) example = example.split(",")[0].trim();

@@ -13,7 +13,8 @@ COPY src/main/proto/ src/main/proto/
 COPY testdata/ testdata/
 
 RUN cmake -S cpp/worker -B build && cmake --build build -j && \
-    g++ -O2 -std=c++17 -o /usr/local/bin/map cpp/worker/map.cc
+    g++ -O2 -std=c++17 -o /usr/local/bin/map cpp/worker/map.cc && \
+    g++ -O2 -std=c++17 -o /usr/local/bin/reduce cpp/worker/reduce.cc
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
@@ -33,6 +34,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/build/worker /usr/local/bin/worker
 COPY --from=build /usr/local/bin/map /usr/local/bin/map
+COPY --from=build /usr/local/bin/reduce /usr/local/bin/reduce
 COPY --from=build /src/testdata /usr/local/share/gridmr/testdata
 ENV MASTER_HOST=master
 ENV MASTER_PORT=50051

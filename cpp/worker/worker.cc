@@ -177,16 +177,19 @@ static void do_map(const std::string& s3_uri, const std::string& binary_uri, int
     std::string file = (pos == std::string::npos) ? s3_uri : s3_uri.substr(pos + 1);
     input_path = prefix + "/" + file;
   }
-  // Dump input content to stdout (debug)
+  // Dump input content as a single log line (debug)
   {
     std::ifstream fin(input_path);
     if (fin) {
-      std::cout << "[INPUT_BEGIN]" << std::endl;
+      std::ostringstream all;
       std::string line;
+      bool first = true;
       while (std::getline(fin, line)) {
-        std::cout << line << std::endl;
+        if (!first) all << ' ';
+        first = false;
+        all << line;
       }
-      std::cout << "[INPUT_END]" << std::endl;
+      std::cout << "[INPUT_ONE_LINE] " << all.str() << std::endl;
     } else {
       std::cerr << "[worker] Unable to open input file to print: " << input_path << std::endl;
     }
@@ -239,6 +242,63 @@ static void do_map(const std::string& s3_uri, const std::string& binary_uri, int
     ofs.close();
     std::cerr << "[worker] partition " << i << " records: " << counts[i] << std::endl;
   }
+}
+
+static bool ensure_reducer_binary(const std::string& binary_uri, std::string& out_path){
+  if (binary_uri.empty()) return false;
+  // Reuse mapper helper for compilation/exec logic
+  return ensure_mapper_binary(binary_uri, out_path);
+}
+
+static std::string run_reducer_and_capture(const std::string& reducer, const std::string& input_path){
+  std::string cmd = reducer + " < " + input_path;
+  std::cerr << "[worker] REDUCE exec: " << cmd << std::endl;
+  FILE* pipe = popen(cmd.c_str(), "r");
+  if (!pipe) {
+    std::cerr << "[worker] Failed to run reducer" << std::endl;
+    return {};
+  }
+  std::ostringstream out;
+  char buf[4096];
+  while (fgets(buf, sizeof(buf), pipe)) {
+    std::string s(buf);
+    out << s;
+  }
+  pclose(pipe);
+  return out.str();
+}
+
+static std::string concat_reduce_inputs(int count){
+  std::string tmp = "/tmp/reduce_concat.txt";
+  std::ofstream ofs(tmp, std::ios::binary);
+  for (int i = 0; i < count; ++i){
+    std::string path = std::string("/tmp/reduce-input-") + std::to_string(i) + ".txt";
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) continue;
+    ofs << ifs.rdbuf();
+  }
+  ofs.close();
+  return tmp;
+}
+
+static std::string do_reduce_collect_output(const AssignTask& t){
+  // Prepare reducer binary
+  std::string reducer = "/usr/local/bin/reduce";
+  std::string downloaded;
+  std::string red_uri = envOr("MR_REDUCE_BIN_URI", t.binary_uri().c_str());
+  if (!red_uri.empty() && ensure_reducer_binary(red_uri, downloaded)) reducer = downloaded;
+  // Concatenate inputs and run
+  std::string concatPath = concat_reduce_inputs(t.split_uris_size());
+  std::string out = run_reducer_and_capture(reducer, concatPath);
+  // Echo reducer output for debug
+  std::cout << "[REDUCER_OUT_BEGIN]" << std::endl;
+  std::istringstream iss(out);
+  std::string line;
+  while (std::getline(iss, line)) {
+    std::cout << line << std::endl;
+  }
+  std::cout << "[REDUCER_OUT_END]" << std::endl;
+  return out;
 }
 
 static bool upload_file_to_minio(const std::string& local_path, const std::string& s3_uri){
@@ -315,7 +375,7 @@ class WorkerClient {
           stream->Write(statusMsg);
         }
         if (t.type() == AssignTask::REDUCE && t.split_uris_size() > 0) {
-          // For now, only download inputs to verify integrity
+          // Download inputs
           for (int i = 0; i < t.split_uris_size(); ++i) {
             std::string in = t.split_uris(i);
             std::string dest = std::string("/tmp/reduce-input-") + std::to_string(i) + ".txt";
@@ -325,12 +385,30 @@ class WorkerClient {
               std::cerr << "[worker] reduce input downloaded: " << dest << std::endl;
             }
           }
+          // Run reducer and capture output
+          std::string reduceOut = do_reduce_collect_output(t);
+          // Persist reducer output to tmp file
+          std::string outLocal = std::string("/tmp/reduce-out-") + std::to_string(t.reducer_id()) + ".txt";
+          {
+            std::ofstream ofs(outLocal, std::ios::binary);
+            ofs.write(reduceOut.data(), (std::streamsize)reduceOut.size());
+          }
+          // Upload to s3://<bucket>/results/<jobId>/part-<pid>.txt
+          std::string example = t.split_uris(0);
+          S3Loc loc; if (!parse_s3_uri(example, loc)) loc.bucket = "gridmr";
+          std::string destS3 = std::string("s3://") + loc.bucket + "/results/" + t.job_id() + "/part-" + std::to_string(t.reducer_id()) + ".txt";
+          std::string resultMsg = std::string("result_uri=") + destS3;
+          if (!upload_file_to_minio(outLocal, destS3)) {
+            std::cerr << "[worker] reduce output upload failed: " << destS3 << std::endl;
+            resultMsg = "reduce_upload_failed";
+          }
           WorkerToMaster statusMsg;
           TaskStatus* st = statusMsg.mutable_status();
           st->set_task_id(t.task_id());
           st->set_state(TaskStatus::COMPLETED);
           st->set_progress(100);
-          st->set_message("reduce fetched inputs");
+          // Send only the URI, not the entire output
+          st->set_message(resultMsg);
           stream->Write(statusMsg);
         }
       }
