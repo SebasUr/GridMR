@@ -4,27 +4,45 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(Protobuf REQUIRED)
 find_package(gRPC REQUIRED)
+find_package(Threads REQUIRED)
 find_package(AWSSDK QUIET COMPONENTS s3)
 
-# Generate C++ from proto in src/main/proto
+# Proto paths
 set(PROTO_DIR ${CMAKE_SOURCE_DIR}/../../src/main/proto)
 set(PROTO_FILE ${PROTO_DIR}/gridmr.proto)
 
-# Use grpc built-in protoc if available
-get_target_property(grpc_cpp_plugin_location gRPC::grpc_cpp_plugin LOCATION)
+find_program(PROTOC protoc REQUIRED)
+find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
 
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILE})
-grpc_generate_cpp(GRPC_SRCS GRPC_HDRS ${PROTO_FILE})
+set(GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${GEN_DIR})
 
-add_executable(worker worker.cc ${PROTO_SRCS} ${PROTO_HDRS} ${GRPC_SRCS} ${GRPC_HDRS})
+add_custom_command(
+	OUTPUT ${GEN_DIR}/gridmr.pb.cc ${GEN_DIR}/gridmr.pb.h
+	COMMAND ${PROTOC} --proto_path=${PROTO_DIR} --cpp_out=${GEN_DIR} ${PROTO_FILE}
+	DEPENDS ${PROTO_FILE}
+)
 
-# Link against gRPC and protobuf
-find_package(Threads REQUIRED)
-target_link_libraries(worker PRIVATE gRPC::grpc++ protobuf::libprotobuf Threads::Threads)
+add_custom_command(
+	OUTPUT ${GEN_DIR}/gridmr.grpc.pb.cc ${GEN_DIR}/gridmr.grpc.pb.h
+	COMMAND ${PROTOC} --proto_path=${PROTO_DIR} 
+										--grpc_out=${GEN_DIR} 
+										--plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN} 
+										${PROTO_FILE}
+	DEPENDS ${PROTO_FILE}
+)
+
+add_library(gridmr_proto
+	${GEN_DIR}/gridmr.pb.cc
+	${GEN_DIR}/gridmr.grpc.pb.cc
+)
+target_include_directories(gridmr_proto PUBLIC ${GEN_DIR})
+target_link_libraries(gridmr_proto PUBLIC gRPC::grpc++ protobuf::libprotobuf)
+
 if(AWSSDK_FOUND)
-	target_link_libraries(worker PRIVATE aws-cpp-sdk-s3)
-	target_compile_definitions(worker PRIVATE GRIDMR_HAVE_AWSSDK)
+	target_link_libraries(gridmr_proto PUBLIC aws-cpp-sdk-s3)
+	target_compile_definitions(gridmr_proto PUBLIC GRIDMR_HAVE_AWSSDK)
 endif()
 
-# Include directories for generated code
-target_include_directories(worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+add_executable(worker worker.cc)
+target_link_libraries(worker PRIVATE gridmr_proto Threads::Threads)

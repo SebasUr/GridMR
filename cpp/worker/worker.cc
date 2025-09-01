@@ -2,6 +2,17 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
+#include <fstream>
+#include <cstdio>
+
+#ifdef GRIDMR_HAVE_AWSSDK
+#include <aws/core/Aws.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/utils/memory/stl/AWSString.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#endif
 
 #include "gridmr.pb.h"
 #include "gridmr.grpc.pb.h"
@@ -23,10 +34,180 @@ static std::string envOr(const char* k, const char* d){
   return (v && *v) ? std::string(v) : std::string(d);
 }
 
-static void do_map(const std::string& s3_uri, int reducer_id, int n_reducers) {
-  // Placeholder: here you'd read from MinIO (S3 API) and produce partitions
-  std::cout << "[worker] MAP reading " << s3_uri << ", reducers=" << n_reducers << "\n";
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+struct S3Loc { std::string bucket; std::string key; };
+
+static bool parse_s3_uri(const std::string& uri, S3Loc& out){
+  const std::string pre = "s3://";
+  if (uri.rfind(pre, 0) != 0) return false;
+  auto rest = uri.substr(pre.size());
+  auto slash = rest.find('/');
+  if (slash == std::string::npos) return false;
+  out.bucket = rest.substr(0, slash);
+  out.key = rest.substr(slash + 1);
+  return !out.bucket.empty() && !out.key.empty();
+}
+
+#ifdef GRIDMR_HAVE_AWSSDK
+static void ensureAwsInit(){
+  static bool inited = false;
+  static Aws::SDKOptions options;
+  if (!inited){
+    Aws::InitAPI(options);
+    std::atexit([](){ static Aws::SDKOptions options2; Aws::ShutdownAPI(options2); });
+    inited = true;
+  }
+}
+
+static std::string strip_scheme(const std::string& endpoint, Aws::Http::Scheme& scheme){
+  std::string ep = endpoint;
+  scheme = Aws::Http::Scheme::HTTPS;
+  const std::string http = "http://";
+  const std::string https = "https://";
+  if (ep.rfind(http,0)==0){ scheme = Aws::Http::Scheme::HTTP; return ep.substr(http.size()); }
+  if (ep.rfind(https,0)==0){ scheme = Aws::Http::Scheme::HTTPS; return ep.substr(https.size()); }
+  return ep; // assume host:port
+}
+
+static bool s3_download_to_file(const std::string& s3_uri, const std::string& out_path){
+  ensureAwsInit();
+  S3Loc loc; if (!parse_s3_uri(s3_uri, loc)){ std::cerr << "[worker] Bad S3 URI: " << s3_uri << std::endl; return false; }
+  std::string endpoint = envOr("MINIO_ENDPOINT", "http://minio:9000");
+  std::string access = envOr("MINIO_ACCESS_KEY", "minioadmin");
+  std::string secret = envOr("MINIO_SECRET_KEY", "minioadmin");
+
+  Aws::Client::ClientConfiguration cfg;
+  cfg.region = "us-east-1";
+  cfg.useDualStack = false;
+  cfg.enableHostPrefixInjection = false;
+  cfg.followRedirects = true;
+  cfg.verifySSL = false; // MinIO local in HTTP
+  cfg.useVirtualAddressing = false; // path-style for MinIO
+  Aws::Http::Scheme scheme;
+  cfg.endpointOverride = strip_scheme(endpoint, scheme).c_str();
+  cfg.scheme = scheme;
+
+  Aws::Auth::AWSCredentials creds(access.c_str(), secret.c_str());
+  Aws::S3::S3Client s3(creds, cfg, Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, /*useVirtualAddressing*/ false);
+
+  Aws::S3::Model::GetObjectRequest req;
+  req.SetBucket(loc.bucket.c_str());
+  req.SetKey(loc.key.c_str());
+  auto outcome = s3.GetObject(req);
+  if (!outcome.IsSuccess()){
+    std::cerr << "[worker] S3 GetObject failed: " << outcome.GetError().GetMessage() << std::endl;
+    return false;
+  }
+  auto& is = outcome.GetResult().GetBody();
+  std::ofstream ofs(out_path, std::ios::binary);
+  ofs << is.rdbuf();
+  ofs.close();
+  return true;
+}
+#endif
+
+#ifndef GRIDMR_HAVE_AWSSDK
+// Fallback: use awscli with endpoint override to download from MinIO
+static bool s3_download_to_file(const std::string& s3_uri, const std::string& out_path){
+  std::string endpoint = envOr("MINIO_ENDPOINT", "http://minio:9000");
+  std::string access = envOr("MINIO_ACCESS_KEY", "minioadmin");
+  std::string secret = envOr("MINIO_SECRET_KEY", "minioadmin");
+  std::string cmd = std::string("AWS_ACCESS_KEY_ID=") + access +
+                    " AWS_SECRET_ACCESS_KEY=" + secret +
+                    " aws --no-cli-pager --endpoint-url " + endpoint +
+                    " s3 cp '" + s3_uri + "' '" + out_path + "'";
+  std::cerr << "[worker] awscli: " << cmd << std::endl;
+  int rc = std::system(cmd.c_str());
+  return rc == 0;
+}
+#endif
+
+static bool download_url_to_file(const std::string& url, const std::string& out_path){
+  if (url.rfind("s3://", 0) == 0) {
+    // Use the same S3 downloader (MinIO-compatible)
+    std::cerr << "[worker] download mapper from S3: " << url << std::endl;
+    return s3_download_to_file(url, out_path);
+  }
+  std::string cmd = std::string("curl -fsSL ") + url + " -o " + out_path;
+  std::cerr << "[worker] curl: " << cmd << std::endl;
+  int rc = std::system(cmd.c_str());
+  return rc == 0;
+}
+
+static bool ends_with(const std::string& s, const std::string& suf){
+  return s.size() >= suf.size() && s.compare(s.size()-suf.size(), suf.size(), suf) == 0;
+}
+
+static bool ensure_mapper_binary(const std::string& binary_uri, std::string& out_path){
+  if (binary_uri.empty()) return false;
+  // If it's a C++ source, compile it locally; else treat as binary
+  if (ends_with(binary_uri, ".cc") || ends_with(binary_uri, ".cpp")){
+    std::string src = "/tmp/map_src.cc";
+    if (!download_url_to_file(binary_uri, src)) return false;
+    std::string bin = "/tmp/map_bin";
+    std::string cmd = std::string("g++ -O2 -std=c++17 -static -static-libstdc++ -o ") + bin + " " + src;
+    std::cerr << "[worker] compiling mapper: " << cmd << std::endl;
+    if (std::system(cmd.c_str()) != 0){
+      // Fallback to dynamic if static fails
+      cmd = std::string("g++ -O2 -std=c++17 -o ") + bin + " " + src;
+      std::cerr << "[worker] static link failed, retry dynamic: " << cmd << std::endl;
+      if (std::system(cmd.c_str()) != 0) return false;
+    }
+    std::string chmodcmd = std::string("chmod +x ") + bin;
+    std::system(chmodcmd.c_str());
+    out_path = bin;
+    return true;
+  } else {
+    std::string dest = "/tmp/map_bin";
+    if (!download_url_to_file(binary_uri, dest)) return false;
+    std::string chmodcmd = std::string("chmod +x ") + dest;
+    if (std::system(chmodcmd.c_str()) != 0) return false;
+    out_path = dest;
+    return true;
+  }
+}
+
+static void do_map(const std::string& s3_uri, const std::string& binary_uri, int /*reducer_id*/, int n_reducers) {
+  std::string input_path;
+  input_path = "/tmp/map_input.txt";
+  if (!s3_download_to_file(s3_uri, input_path)){
+    std::cerr << "[worker] S3 download failed, falling back to local testdata for URI: " << s3_uri << std::endl;
+    std::string prefix = envOr("MAP_LOCAL_PREFIX", "/src/testdata");
+    auto pos = s3_uri.find_last_of('/');
+    std::string file = (pos == std::string::npos) ? s3_uri : s3_uri.substr(pos + 1);
+    input_path = prefix + "/" + file;
+  }
+  // If we have a binary_uri, download and use it; else use embedded /usr/local/bin/map
+  std::string mapper = "/usr/local/bin/map";
+  std::string downloaded;
+  if (!binary_uri.empty() && ensure_mapper_binary(binary_uri, downloaded)) mapper = downloaded;
+  std::string cmd = mapper + " < " + input_path;
+  std::cerr << "[worker] MAP exec: " << cmd << std::endl;
+  FILE* pipe = popen(cmd.c_str(), "r");
+  if (!pipe) {
+    std::cerr << "[worker] Failed to run mapper" << std::endl;
+    return;
+  }
+  // Simple partition counters for demo
+  std::vector<size_t> counts(std::max(1, n_reducers), 0);
+  char* line = nullptr; size_t len = 0; ssize_t nread;
+  while (true) {
+    char buf[4096];
+    if (!fgets(buf, sizeof(buf), pipe)) break;
+    std::string s(buf);
+    // Parse key\tvalue
+    auto tab = s.find('\t');
+    if (tab == std::string::npos) continue;
+    std::string key = s.substr(0, tab);
+    // partition by hash
+    std::hash<std::string> h;
+    int pid = static_cast<int>(h(key) % std::max(1, n_reducers));
+    counts[pid]++;
+  }
+  pclose(pipe);
+  // Log summary
+  for (int i = 0; i < (int)counts.size(); ++i) {
+    std::cerr << "[worker] partition " << i << " records: " << counts[i] << std::endl;
+  }
 }
 
 class WorkerClient {
@@ -49,11 +230,12 @@ class WorkerClient {
 
     MasterToWorker msg;
     while (stream->Read(&msg)) {
+      std::cerr << "[worker] Received message from master\n";
       if (msg.has_assign()) {
         const AssignTask& t = msg.assign();
-        std::cout << "[worker] Received task " << t.task_id() << " type=" << t.type() << "\n";
+        std::cout << "[worker] Received task " << t.task_id() << " type=" << t.type() << std::endl;
         if (t.type() == AssignTask::MAP && t.split_uris_size() > 0) {
-          do_map(t.split_uris(0), t.reducer_id(), t.n_reducers());
+          do_map(t.split_uris(0), t.binary_uri(), t.reducer_id(), t.n_reducers());
           WorkerToMaster statusMsg;
           TaskStatus* st = statusMsg.mutable_status();
           st->set_task_id(t.task_id());
@@ -67,7 +249,7 @@ class WorkerClient {
 
     Status s = stream->Finish();
     if (!s.ok()) {
-      std::cerr << "Stream finished with error: " << s.error_message() << "\n";
+      std::cerr << "Stream finished with error: " << s.error_message() << std::endl;
     }
   }
 
@@ -79,7 +261,18 @@ int main(int argc, char** argv) {
   std::string host = envOr("MASTER_HOST", "localhost");
   std::string port = envOr("MASTER_PORT", "50051");
   std::string target = host + ":" + port;
-  WorkerClient c(grpc::CreateChannel(target, grpc::InsecureChannelCredentials()));
+  auto channel = grpc::CreateChannel(target, grpc::InsecureChannelCredentials());
+  // wait 4 master
+  int attempts = 0;
+  while (true) {
+    auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(5);
+    if (channel->WaitForConnected(deadline)) break;
+    attempts++;
+    std::cerr << "[worker] Waiting for master at " << target << " (attempt " << attempts << ")...\n";
+    std::this_thread::sleep_for(std::chrono::seconds(std::min(5, attempts)));
+  }
+
+  WorkerClient c(channel);
   c.Run();
   return 0;
 }

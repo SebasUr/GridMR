@@ -22,6 +22,7 @@ com/gridmr/proto/MasterToWorker$1.class
 com/gridmr/proto/MasterToWorkerOrBuilder.class
 com/gridmr/proto/ControlServiceGrpc$AsyncService.class
 com/gridmr/proto/WorkerToMaster$Builder.class
+com/gridmr/master/MasterServer.class
 com/gridmr/proto/ControlServiceGrpc$ControlServiceFileDescriptorSupplier.class
 com/gridmr/proto/ControlServiceGrpc$ControlServiceMethodDescriptorSupplier.class
 com/gridmr/proto/WorkerInfoOrBuilder.class
@@ -42,4 +43,5 @@ com/gridmr/proto/ControlServiceGrpc$ControlServiceStub.class
 com/gridmr/proto/ControlServiceGrpc$ControlServiceBlockingStub.class
 com/gridmr/proto/AssignTask$TaskType$1.class
 com/gridmr/proto/TaskStatus$Builder.class
+com/gridmr/master/MasterServer$ControlServiceImpl.class
 com/gridmr/proto/MasterToWorker.class
