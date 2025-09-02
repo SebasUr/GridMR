@@ -1,0 +1,239 @@
+package com.gridmr.master;
+
+import com.gridmr.proto.AssignTask;
+import com.gridmr.proto.ControlServiceGrpc;
+import com.gridmr.proto.MasterToWorker;
+import com.gridmr.proto.WorkerInfo;
+import com.gridmr.proto.WorkerToMaster;
+import com.gridmr.proto.TaskStatus;
+import com.gridmr.proto.PartUploaded;
+import io.grpc.Server;
+import io.grpc.ServerBuilder;
+import io.grpc.stub.StreamObserver;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Queue;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Minimal gRPC Master that accepts worker streams and assigns a single demo MAP task.
+ * The MAP/REDUCE functions themselves are implemented in C++ workers (hardcoded there).
+ */
+public class MasterServer {
+
+    // Definimos el puerto y el servidor
+    private final int port;
+    private Server server;
+
+    public MasterServer(int port) {
+        this.port = port;
+    }
+
+    public void start() throws IOException {
+        server = ServerBuilder.forPort(port)
+                .addService(new ControlServiceImpl())
+                .build()
+                .start();
+        System.out.println("Master gRPC server started on port " + port);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.err.println("Shutting down master...");
+            MasterServer.this.stop();
+            System.err.println("Master shut down.");
+        }));
+    }
+
+    public void stop() {
+        if (server != null) {
+            server.shutdown();
+        }
+    }
+
+    public void blockUntilShutdown() throws InterruptedException {
+        if (server != null) {
+            server.awaitTermination();
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        int port = Integer.parseInt(getEnvOrDefault("MASTER_PORT", "50051"));
+        new MasterServer(port).run();
+    }
+
+    private void run() throws Exception {
+        start();
+        blockUntilShutdown();
+    }
+
+    static class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBase {
+        // Global queue of pending map splits (URIs), shared across workers
+    private static final Queue<String> PENDING_SPLITS = new ConcurrentLinkedQueue<>();
+    private static final AtomicInteger NEXT_MAP_ID = new AtomicInteger(0);
+    private static volatile int totalSplits = 0;
+    private static volatile int completedMaps = 0;
+    private static volatile boolean reducersScheduled = false;
+        private static final java.util.List<StreamObserver<MasterToWorker>> CLIENTS = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private static final java.util.List<String> CLIENT_IDS = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private static final AtomicInteger CLIENT_IDX = new AtomicInteger(0);
+        private static final String JOB_ID = java.util.UUID.randomUUID().toString();
+
+        static {
+            // Initialize split queue once from env
+            String multi = getEnvOrDefault("MR_INPUT_S3_URIS", "").trim();
+            if (!multi.isEmpty()) {
+                Arrays.stream(multi.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .forEach(PENDING_SPLITS::add);
+            } else {
+                String single = getEnvOrDefault("MR_INPUT_S3_URI", "s3://gridmr/input.txt").trim();
+                if (!single.isEmpty()) {
+                    // Allow comma-separated in MR_INPUT_S3_URI as well
+                    if (single.contains(",")) {
+                        Arrays.stream(single.split(","))
+                                .map(String::trim)
+                                .filter(s -> !s.isEmpty())
+                                .forEach(PENDING_SPLITS::add);
+                    } else {
+                        PENDING_SPLITS.add(single);
+                    }
+                }
+            }
+            totalSplits = PENDING_SPLITS.size();
+            System.out.println("Initialized splits: " + totalSplits);
+        }
+        @Override
+    public StreamObserver<WorkerToMaster> workerStream(StreamObserver<MasterToWorker> responseObserver) {
+            final String[] workerIdHolder = new String[1];
+            final boolean[] busy = new boolean[]{false};
+
+            return new StreamObserver<WorkerToMaster>() {
+                @Override
+                public void onNext(WorkerToMaster msg) {
+                    if (msg.hasInfo()) {
+                        WorkerInfo info = msg.getInfo();
+                        workerIdHolder[0] = info.getWorkerId();
+                        System.out.println("Worker connected: " + info.getWorkerId() + "@" + info.getHost());
+                        // Register this stream to assign future tasks (reducers)
+                        if (!CLIENT_IDS.contains(info.getWorkerId())) {
+                            CLIENTS.add(responseObserver);
+                            CLIENT_IDS.add(info.getWorkerId());
+                        }
+                        tryAssignNext(responseObserver, JOB_ID, workerIdHolder[0], busy);
+                    }
+                    if (msg.hasStatus()) {
+                        TaskStatus st = msg.getStatus();
+                        String m = st.getMessage();
+                        if (m != null && m.startsWith("result_uri=")) {
+                            System.out.printf("Status from %s: %s %.1f%% result=%s%n", st.getTaskId(), st.getState(), st.getProgress(), m.substring("result_uri=".length()));
+                        } else {
+                            System.out.printf("Status from %s: %s %.1f%%%s%n", st.getTaskId(), st.getState(), st.getProgress(), (m==null||m.isEmpty()?"":" msg="+m));
+                        }
+                        if (st.getState() == TaskStatus.State.COMPLETED) {
+                            // Mark worker idle and assign next split if available
+                            busy[0] = false;
+                            if (workerIdHolder[0] != null) {
+                                tryAssignNext(responseObserver, JOB_ID, workerIdHolder[0], busy);
+                            }
+                            // If this was a MAP completion, count it
+                            if (st.getTaskId().startsWith("map-")) {
+                                int done = ++completedMaps;
+                                System.out.println("Map completed: " + done + "/" + totalSplits);
+                            }
+                            // When all maps are done, schedule reducers once
+                            maybeScheduleReducers();
+                        }
+                    }
+                    if (msg.hasPart()) {
+                        PartUploaded p = msg.getPart();
+                        System.out.printf("Map part uploaded: job=%s map=%d part=%d uri=%s%n", p.getJobId(), p.getMapId(), p.getPartitionId(), p.getUri());
+                    }
+                }
+
+                @Override
+                public void onError(Throwable t) {
+                    System.err.println("Worker stream error: " + t);
+                }
+
+                @Override
+                public void onCompleted() {
+                    System.out.println("Worker stream completed");
+                    responseObserver.onCompleted();
+                }
+
+                private void tryAssignNext(StreamObserver<MasterToWorker> responseObserver, String jobId, String workerId, boolean[] busy) {
+                    if (busy[0]) return;
+                    String split = PENDING_SPLITS.poll();
+                    if (split == null) {
+                        return; // nothing to do
+                    }
+                    int mapId = NEXT_MAP_ID.getAndIncrement();
+                    int nReducers = Integer.parseInt(getEnvOrDefault("MR_N_REDUCERS", "1"));
+                    AssignTask.Builder ab = AssignTask.newBuilder()
+                            .setTaskId("map-" + mapId)
+                            .setJobId(jobId)
+                            .setType(AssignTask.TaskType.MAP)
+                            .addSplitUris(split)
+                            .setReducerId(0)
+                            .setNReducers(nReducers);
+                    String binUri = getEnvOrDefault("MR_MAP_BIN_URI", "s3://gridmr/map.cc");
+                    if (!binUri.isEmpty()) {
+                        ab.setBinaryUri(binUri);
+                    }
+                    MasterToWorker out = MasterToWorker.newBuilder().setAssign(ab.build()).build();
+                    responseObserver.onNext(out);
+                    busy[0] = true;
+                    System.out.println("Assigned MAP task " + ("map-" + mapId) + " split=" + split + " to " + workerId);
+                }
+
+                private synchronized void maybeScheduleReducers() {
+                    if (reducersScheduled) return;
+                    if (completedMaps < totalSplits) return;
+                    reducersScheduled = true;
+                    System.out.println("All maps completed; scheduling reducers...");
+                    int nReducers = Integer.parseInt(getEnvOrDefault("MR_N_REDUCERS", "1"));
+                    // Build per-partition URIs based on our upload convention
+                    for (int pid = 0; pid < nReducers; ++pid) {
+                        AssignTask.Builder rb = AssignTask.newBuilder()
+                                .setTaskId("reduce-" + pid)
+                                .setJobId(JOB_ID)
+                                .setType(AssignTask.TaskType.REDUCE)
+                                .setReducerId(pid)
+                                .setNReducers(nReducers);
+                        String reduceBin = getEnvOrDefault("MR_REDUCE_BIN_URI", "s3://gridmr/reduce.cc");
+                        if (!reduceBin.isEmpty()) {
+                            rb.setBinaryUri(reduceBin);
+                        }
+                        // Derive bucket from MR_INPUT_S3_URIS (or MR_INPUT_S3_URI)
+                        String example = getEnvOrDefault("MR_INPUT_S3_URI", "");
+                        if (example.contains(",")) example = example.split(",")[0].trim();
+                        if (example.isEmpty()) example = getEnvOrDefault("MR_INPUT_S3_URIS", "");
+                        if (example.contains(",")) example = example.split(",")[0].trim();
+                        String bucket = "gridmr";
+                        int s = example.indexOf("s3://");
+                        if (s == 0) {
+                            int slash = example.indexOf('/', 5);
+                            if (slash > 5) bucket = example.substring(5, slash);
+                        }
+                        // Collect all map part URIs written by workers
+                        for (int mid = 0; mid < totalSplits; ++mid) {
+                            String uri = "s3://" + bucket + "/intermediate/" + JOB_ID + "/part-" + pid + "-map-" + mid + ".txt";
+                            rb.addSplitUris(uri);
+                        }
+                        MasterToWorker out = MasterToWorker.newBuilder().setAssign(rb.build()).build();
+                        // Assign to an available client (round-robin); fallback to first if none
+                        StreamObserver<MasterToWorker> target = CLIENTS.isEmpty() ? null : CLIENTS.get(Math.abs(CLIENT_IDX.getAndIncrement()) % CLIENTS.size());
+                        if (target != null) {
+                            target.onNext(out);
+                            System.out.println("Assigned REDUCE task reduce-" + pid + " to worker " + CLIENT_IDS.get(Math.abs(CLIENT_IDX.get()-1) % CLIENT_IDS.size()) + " with " + totalSplits + " inputs");
+                        } else {
+                            System.out.println("No connected workers to assign reducer " + pid);
+                        }
+                    }
+                }
+            };
+        }
+    }
+}
