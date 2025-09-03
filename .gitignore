@@ -1,0 +1,35 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Java / Maven
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties
+
+# C++ / CMake
+cmake-build-*/
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Generated code (if any outside build dir)
+generated/
+
+# Docker / env (optional)
+.env
+
+# Local test data outputs
+/cpp/worker/*.tmp
