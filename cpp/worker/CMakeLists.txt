@@ -44,5 +44,16 @@ if(AWSSDK_FOUND)
 	target_compile_definitions(gridmr_proto PUBLIC GRIDMR_HAVE_AWSSDK)
 endif()
 
-add_executable(worker worker.cc)
-target_link_libraries(worker PRIVATE gridmr_proto Threads::Threads)
+# Worker library
+file(GLOB_RECURSE WORKER_SOURCES
+	src/common/*.cc
+	src/mapreduce/*.cc
+)
+
+add_library(gridmr_worker_lib ${WORKER_SOURCES})
+target_include_directories(gridmr_worker_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${GEN_DIR})
+target_link_libraries(gridmr_worker_lib PUBLIC gridmr_proto Threads::Threads)
+
+add_executable(worker src/worker_main.cc)
+target_include_directories(worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${GEN_DIR})
+target_link_libraries(worker PRIVATE gridmr_worker_lib)
