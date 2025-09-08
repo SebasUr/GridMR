@@ -228,10 +228,6 @@ private static final long serialVersionUID = 0L;
   public static final int PROGRESS_FIELD_NUMBER = 3;
   private float progress_ = 0F;
   /**
-   * <pre>
-   * 0..100
-   * </pre>
-   *
    * <code>float progress = 3;</code>
    * @return The progress.
    */
@@ -803,10 +799,6 @@ private static final long serialVersionUID = 0L;
 
     private float progress_ ;
     /**
-     * <pre>
-     * 0..100
-     * </pre>
-     *
      * <code>float progress = 3;</code>
      * @return The progress.
      */
@@ -815,10 +807,6 @@ private static final long serialVersionUID = 0L;
       return progress_;
     }
     /**
-     * <pre>
-     * 0..100
-     * </pre>
-     *
      * <code>float progress = 3;</code>
      * @param value The progress to set.
      * @return This builder for chaining.
@@ -831,10 +819,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * 0..100
-     * </pre>
-     *
      * <code>float progress = 3;</code>
      * @return This builder for chaining.
      */

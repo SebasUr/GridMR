@@ -254,10 +254,6 @@ private static final long serialVersionUID = 0L;
   private com.google.protobuf.LazyStringArrayList splitUris_ =
       com.google.protobuf.LazyStringArrayList.emptyList();
   /**
-   * <pre>
-   * "s3://bucket/jobid/split_0"
-   * </pre>
-   *
    * <code>repeated string split_uris = 4;</code>
    * @return A list containing the splitUris.
    */
@@ -266,10 +262,6 @@ private static final long serialVersionUID = 0L;
     return splitUris_;
   }
   /**
-   * <pre>
-   * "s3://bucket/jobid/split_0"
-   * </pre>
-   *
    * <code>repeated string split_uris = 4;</code>
    * @return The count of splitUris.
    */
@@ -277,10 +269,6 @@ private static final long serialVersionUID = 0L;
     return splitUris_.size();
   }
   /**
-   * <pre>
-   * "s3://bucket/jobid/split_0"
-   * </pre>
-   *
    * <code>repeated string split_uris = 4;</code>
    * @param index The index of the element to return.
    * @return The splitUris at the given index.
@@ -289,10 +277,6 @@ private static final long serialVersionUID = 0L;
     return splitUris_.get(index);
   }
   /**
-   * <pre>
-   * "s3://bucket/jobid/split_0"
-   * </pre>
-   *
    * <code>repeated string split_uris = 4;</code>
    * @param index The index of the value to return.
    * @return The bytes of the splitUris at the given index.
@@ -306,10 +290,6 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object binaryUri_ = "";
   /**
-   * <pre>
-   * not used in MVP; workers use builtin map/reduce
-   * </pre>
-   *
    * <code>string binary_uri = 5;</code>
    * @return The binaryUri.
    */
@@ -327,10 +307,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * not used in MVP; workers use builtin map/reduce
-   * </pre>
-   *
    * <code>string binary_uri = 5;</code>
    * @return The bytes for binaryUri.
    */
@@ -1058,10 +1034,6 @@ private static final long serialVersionUID = 0L;
       bitField0_ |= 0x00000008;
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @return A list containing the splitUris.
      */
@@ -1071,10 +1043,6 @@ private static final long serialVersionUID = 0L;
       return splitUris_;
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @return The count of splitUris.
      */
@@ -1082,10 +1050,6 @@ private static final long serialVersionUID = 0L;
       return splitUris_.size();
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @param index The index of the element to return.
      * @return The splitUris at the given index.
@@ -1094,10 +1058,6 @@ private static final long serialVersionUID = 0L;
       return splitUris_.get(index);
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @param index The index of the value to return.
      * @return The bytes of the splitUris at the given index.
@@ -1107,10 +1067,6 @@ private static final long serialVersionUID = 0L;
       return splitUris_.getByteString(index);
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @param index The index to set the value at.
      * @param value The splitUris to set.
@@ -1126,10 +1082,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @param value The splitUris to add.
      * @return This builder for chaining.
@@ -1144,10 +1096,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @param values The splitUris to add.
      * @return This builder for chaining.
@@ -1162,10 +1110,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @return This builder for chaining.
      */
@@ -1177,10 +1121,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * "s3://bucket/jobid/split_0"
-     * </pre>
-     *
      * <code>repeated string split_uris = 4;</code>
      * @param value The bytes of the splitUris to add.
      * @return This builder for chaining.
@@ -1198,10 +1138,6 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object binaryUri_ = "";
     /**
-     * <pre>
-     * not used in MVP; workers use builtin map/reduce
-     * </pre>
-     *
      * <code>string binary_uri = 5;</code>
      * @return The binaryUri.
      */
@@ -1218,10 +1154,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * not used in MVP; workers use builtin map/reduce
-     * </pre>
-     *
      * <code>string binary_uri = 5;</code>
      * @return The bytes for binaryUri.
      */
@@ -1239,10 +1171,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * not used in MVP; workers use builtin map/reduce
-     * </pre>
-     *
      * <code>string binary_uri = 5;</code>
      * @param value The binaryUri to set.
      * @return This builder for chaining.
@@ -1256,10 +1184,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * not used in MVP; workers use builtin map/reduce
-     * </pre>
-     *
      * <code>string binary_uri = 5;</code>
      * @return This builder for chaining.
      */
@@ -1270,10 +1194,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * not used in MVP; workers use builtin map/reduce
-     * </pre>
-     *
      * <code>string binary_uri = 5;</code>
      * @param value The bytes for binaryUri to set.
      * @return This builder for chaining.

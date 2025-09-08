@@ -53,5 +53,20 @@ public interface WorkerToMasterOrBuilder extends
    */
   com.gridmr.proto.PartUploadedOrBuilder getPartOrBuilder();
 
+  /**
+   * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+   * @return Whether the heartbeat field is set.
+   */
+  boolean hasHeartbeat();
+  /**
+   * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+   * @return The heartbeat.
+   */
+  com.gridmr.proto.Heartbeat getHeartbeat();
+  /**
+   * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+   */
+  com.gridmr.proto.HeartbeatOrBuilder getHeartbeatOrBuilder();
+
   com.gridmr.proto.WorkerToMaster.PayloadCase getPayloadCase();
 }

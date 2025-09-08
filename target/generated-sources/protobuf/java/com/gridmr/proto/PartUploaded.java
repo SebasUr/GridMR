@@ -106,10 +106,6 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object uri_ = "";
   /**
-   * <pre>
-   * s3 URI
-   * </pre>
-   *
    * <code>string uri = 4;</code>
    * @return The uri.
    */
@@ -127,10 +123,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * s3 URI
-   * </pre>
-   *
    * <code>string uri = 4;</code>
    * @return The bytes for uri.
    */
@@ -683,10 +675,6 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object uri_ = "";
     /**
-     * <pre>
-     * s3 URI
-     * </pre>
-     *
      * <code>string uri = 4;</code>
      * @return The uri.
      */
@@ -703,10 +691,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * s3 URI
-     * </pre>
-     *
      * <code>string uri = 4;</code>
      * @return The bytes for uri.
      */
@@ -724,10 +708,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * s3 URI
-     * </pre>
-     *
      * <code>string uri = 4;</code>
      * @param value The uri to set.
      * @return This builder for chaining.
@@ -741,10 +721,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * s3 URI
-     * </pre>
-     *
      * <code>string uri = 4;</code>
      * @return This builder for chaining.
      */
@@ -755,10 +731,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * s3 URI
-     * </pre>
-     *
      * <code>string uri = 4;</code>
      * @param value The bytes for uri to set.
      * @return This builder for chaining.

@@ -13,23 +13,31 @@ public class WorkerManager {
     private final Map<String, Heartbeat> workerStates = new ConcurrentHashMap<>();
 
     // Actualiza el estado de un worker con Heartbeat
-    public void updateWorkerState(Heartbeat hb) {
+    public void update(Heartbeat hb) {
         workerStates.put(hb.getWorkerId(), hb);
+    }
+
+    public void remove(String workerId) {
+        workerStates.remove(workerId);
+    }
+
+    public Heartbeat get(String workerId) {
+        return workerStates.get(workerId);
     }
 
     // Devuelve una lista de workers ordenados por disponibilidad (más libre primero)
     public List<Heartbeat> getWorkersByAvailability() {
         List<Heartbeat> workers = new ArrayList<>(workerStates.values());
-        workers.sort((w1, w2) -> {
+        workers.sort((a,b) -> {
             // Menor uso de CPU y RAM = más libre
-            float w1Score = w1.getCpuUsage() + w1.getRamUsage();
-            float w2Score = w2.getCpuUsage() + w2.getRamUsage();
-            return Float.compare(w1Score, w2Score);
+            float sa = a.getCpuUsage() + a.getRamUsage();
+            float sb = b.getCpuUsage() + b.getRamUsage();
+            return Float.compare(sa, sb); // menor score = más libre
         });
         return workers;
     }
 
-    public Map<String, Heartbeat> getWorkerStates() {
-        return workerStates;
+    public boolean isKnown(String workerId) {
+        return workerStates.containsKey(workerId);
     }
 }

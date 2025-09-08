@@ -114,10 +114,6 @@ private static final long serialVersionUID = 0L;
 
   public static final int CONTROL_FIELD_NUMBER = 2;
   /**
-   * <pre>
-   * CANCEL, etc.
-   * </pre>
-   *
    * <code>string control = 2;</code>
    * @return Whether the control field is set.
    */
@@ -125,10 +121,6 @@ private static final long serialVersionUID = 0L;
     return payloadCase_ == 2;
   }
   /**
-   * <pre>
-   * CANCEL, etc.
-   * </pre>
-   *
    * <code>string control = 2;</code>
    * @return The control.
    */
@@ -150,10 +142,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * CANCEL, etc.
-   * </pre>
-   *
    * <code>string control = 2;</code>
    * @return The bytes for control.
    */
@@ -717,10 +705,6 @@ private static final long serialVersionUID = 0L;
     }
 
     /**
-     * <pre>
-     * CANCEL, etc.
-     * </pre>
-     *
      * <code>string control = 2;</code>
      * @return Whether the control field is set.
      */
@@ -729,10 +713,6 @@ private static final long serialVersionUID = 0L;
       return payloadCase_ == 2;
     }
     /**
-     * <pre>
-     * CANCEL, etc.
-     * </pre>
-     *
      * <code>string control = 2;</code>
      * @return The control.
      */
@@ -755,10 +735,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * CANCEL, etc.
-     * </pre>
-     *
      * <code>string control = 2;</code>
      * @return The bytes for control.
      */
@@ -782,10 +758,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * CANCEL, etc.
-     * </pre>
-     *
      * <code>string control = 2;</code>
      * @param value The control to set.
      * @return This builder for chaining.
@@ -799,10 +771,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * CANCEL, etc.
-     * </pre>
-     *
      * <code>string control = 2;</code>
      * @return This builder for chaining.
      */
@@ -815,10 +783,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * CANCEL, etc.
-     * </pre>
-     *
      * <code>string control = 2;</code>
      * @param value The bytes for control to set.
      * @return This builder for chaining.

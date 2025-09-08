@@ -32,10 +32,6 @@ public interface TaskStatusOrBuilder extends
   com.gridmr.proto.TaskStatus.State getState();
 
   /**
-   * <pre>
-   * 0..100
-   * </pre>
-   *
    * <code>float progress = 3;</code>
    * @return The progress.
    */

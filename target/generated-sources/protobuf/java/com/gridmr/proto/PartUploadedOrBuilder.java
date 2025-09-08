@@ -33,19 +33,11 @@ public interface PartUploadedOrBuilder extends
   int getPartitionId();
 
   /**
-   * <pre>
-   * s3 URI
-   * </pre>
-   *
    * <code>string uri = 4;</code>
    * @return The uri.
    */
   java.lang.String getUri();
   /**
-   * <pre>
-   * s3 URI
-   * </pre>
-   *
    * <code>string uri = 4;</code>
    * @return The bytes for uri.
    */

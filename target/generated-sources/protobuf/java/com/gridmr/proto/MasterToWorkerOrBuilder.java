@@ -24,28 +24,16 @@ public interface MasterToWorkerOrBuilder extends
   com.gridmr.proto.AssignTaskOrBuilder getAssignOrBuilder();
 
   /**
-   * <pre>
-   * CANCEL, etc.
-   * </pre>
-   *
    * <code>string control = 2;</code>
    * @return Whether the control field is set.
    */
   boolean hasControl();
   /**
-   * <pre>
-   * CANCEL, etc.
-   * </pre>
-   *
    * <code>string control = 2;</code>
    * @return The control.
    */
   java.lang.String getControl();
   /**
-   * <pre>
-   * CANCEL, etc.
-   * </pre>
-   *
    * <code>string control = 2;</code>
    * @return The bytes for control.
    */

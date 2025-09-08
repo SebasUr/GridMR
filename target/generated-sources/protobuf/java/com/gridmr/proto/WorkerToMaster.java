@@ -48,6 +48,7 @@ private static final long serialVersionUID = 0L;
     INFO(1),
     STATUS(2),
     PART(3),
+    HEARTBEAT(4),
     PAYLOAD_NOT_SET(0);
     private final int value;
     private PayloadCase(int value) {
@@ -68,6 +69,7 @@ private static final long serialVersionUID = 0L;
         case 1: return INFO;
         case 2: return STATUS;
         case 3: return PART;
+        case 4: return HEARTBEAT;
         case 0: return PAYLOAD_NOT_SET;
         default: return null;
       }
@@ -176,6 +178,37 @@ private static final long serialVersionUID = 0L;
     return com.gridmr.proto.PartUploaded.getDefaultInstance();
   }
 
+  public static final int HEARTBEAT_FIELD_NUMBER = 4;
+  /**
+   * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+   * @return Whether the heartbeat field is set.
+   */
+  @java.lang.Override
+  public boolean hasHeartbeat() {
+    return payloadCase_ == 4;
+  }
+  /**
+   * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+   * @return The heartbeat.
+   */
+  @java.lang.Override
+  public com.gridmr.proto.Heartbeat getHeartbeat() {
+    if (payloadCase_ == 4) {
+       return (com.gridmr.proto.Heartbeat) payload_;
+    }
+    return com.gridmr.proto.Heartbeat.getDefaultInstance();
+  }
+  /**
+   * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+   */
+  @java.lang.Override
+  public com.gridmr.proto.HeartbeatOrBuilder getHeartbeatOrBuilder() {
+    if (payloadCase_ == 4) {
+       return (com.gridmr.proto.Heartbeat) payload_;
+    }
+    return com.gridmr.proto.Heartbeat.getDefaultInstance();
+  }
+
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -199,6 +232,9 @@ private static final long serialVersionUID = 0L;
     if (payloadCase_ == 3) {
       output.writeMessage(3, (com.gridmr.proto.PartUploaded) payload_);
     }
+    if (payloadCase_ == 4) {
+      output.writeMessage(4, (com.gridmr.proto.Heartbeat) payload_);
+    }
     getUnknownFields().writeTo(output);
   }
 
@@ -219,6 +255,10 @@ private static final long serialVersionUID = 0L;
     if (payloadCase_ == 3) {
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(3, (com.gridmr.proto.PartUploaded) payload_);
+    }
+    if (payloadCase_ == 4) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(4, (com.gridmr.proto.Heartbeat) payload_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -249,6 +289,10 @@ private static final long serialVersionUID = 0L;
         if (!getPart()
             .equals(other.getPart())) return false;
         break;
+      case 4:
+        if (!getHeartbeat()
+            .equals(other.getHeartbeat())) return false;
+        break;
       case 0:
       default:
     }
@@ -275,6 +319,10 @@ private static final long serialVersionUID = 0L;
       case 3:
         hash = (37 * hash) + PART_FIELD_NUMBER;
         hash = (53 * hash) + getPart().hashCode();
+        break;
+      case 4:
+        hash = (37 * hash) + HEARTBEAT_FIELD_NUMBER;
+        hash = (53 * hash) + getHeartbeat().hashCode();
         break;
       case 0:
       default:
@@ -419,6 +467,9 @@ private static final long serialVersionUID = 0L;
       if (partBuilder_ != null) {
         partBuilder_.clear();
       }
+      if (heartbeatBuilder_ != null) {
+        heartbeatBuilder_.clear();
+      }
       payloadCase_ = 0;
       payload_ = null;
       return this;
@@ -471,6 +522,10 @@ private static final long serialVersionUID = 0L;
       if (payloadCase_ == 3 &&
           partBuilder_ != null) {
         result.payload_ = partBuilder_.build();
+      }
+      if (payloadCase_ == 4 &&
+          heartbeatBuilder_ != null) {
+        result.payload_ = heartbeatBuilder_.build();
       }
     }
 
@@ -531,6 +586,10 @@ private static final long serialVersionUID = 0L;
           mergePart(other.getPart());
           break;
         }
+        case HEARTBEAT: {
+          mergeHeartbeat(other.getHeartbeat());
+          break;
+        }
         case PAYLOAD_NOT_SET: {
           break;
         }
@@ -582,6 +641,13 @@ private static final long serialVersionUID = 0L;
               payloadCase_ = 3;
               break;
             } // case 26
+            case 34: {
+              input.readMessage(
+                  getHeartbeatFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              payloadCase_ = 4;
+              break;
+            } // case 34
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -1038,6 +1104,148 @@ private static final long serialVersionUID = 0L;
       payloadCase_ = 3;
       onChanged();
       return partBuilder_;
+    }
+
+    private com.google.protobuf.SingleFieldBuilderV3<
+        com.gridmr.proto.Heartbeat, com.gridmr.proto.Heartbeat.Builder, com.gridmr.proto.HeartbeatOrBuilder> heartbeatBuilder_;
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     * @return Whether the heartbeat field is set.
+     */
+    @java.lang.Override
+    public boolean hasHeartbeat() {
+      return payloadCase_ == 4;
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     * @return The heartbeat.
+     */
+    @java.lang.Override
+    public com.gridmr.proto.Heartbeat getHeartbeat() {
+      if (heartbeatBuilder_ == null) {
+        if (payloadCase_ == 4) {
+          return (com.gridmr.proto.Heartbeat) payload_;
+        }
+        return com.gridmr.proto.Heartbeat.getDefaultInstance();
+      } else {
+        if (payloadCase_ == 4) {
+          return heartbeatBuilder_.getMessage();
+        }
+        return com.gridmr.proto.Heartbeat.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     */
+    public Builder setHeartbeat(com.gridmr.proto.Heartbeat value) {
+      if (heartbeatBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        payload_ = value;
+        onChanged();
+      } else {
+        heartbeatBuilder_.setMessage(value);
+      }
+      payloadCase_ = 4;
+      return this;
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     */
+    public Builder setHeartbeat(
+        com.gridmr.proto.Heartbeat.Builder builderForValue) {
+      if (heartbeatBuilder_ == null) {
+        payload_ = builderForValue.build();
+        onChanged();
+      } else {
+        heartbeatBuilder_.setMessage(builderForValue.build());
+      }
+      payloadCase_ = 4;
+      return this;
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     */
+    public Builder mergeHeartbeat(com.gridmr.proto.Heartbeat value) {
+      if (heartbeatBuilder_ == null) {
+        if (payloadCase_ == 4 &&
+            payload_ != com.gridmr.proto.Heartbeat.getDefaultInstance()) {
+          payload_ = com.gridmr.proto.Heartbeat.newBuilder((com.gridmr.proto.Heartbeat) payload_)
+              .mergeFrom(value).buildPartial();
+        } else {
+          payload_ = value;
+        }
+        onChanged();
+      } else {
+        if (payloadCase_ == 4) {
+          heartbeatBuilder_.mergeFrom(value);
+        } else {
+          heartbeatBuilder_.setMessage(value);
+        }
+      }
+      payloadCase_ = 4;
+      return this;
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     */
+    public Builder clearHeartbeat() {
+      if (heartbeatBuilder_ == null) {
+        if (payloadCase_ == 4) {
+          payloadCase_ = 0;
+          payload_ = null;
+          onChanged();
+        }
+      } else {
+        if (payloadCase_ == 4) {
+          payloadCase_ = 0;
+          payload_ = null;
+        }
+        heartbeatBuilder_.clear();
+      }
+      return this;
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     */
+    public com.gridmr.proto.Heartbeat.Builder getHeartbeatBuilder() {
+      return getHeartbeatFieldBuilder().getBuilder();
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     */
+    @java.lang.Override
+    public com.gridmr.proto.HeartbeatOrBuilder getHeartbeatOrBuilder() {
+      if ((payloadCase_ == 4) && (heartbeatBuilder_ != null)) {
+        return heartbeatBuilder_.getMessageOrBuilder();
+      } else {
+        if (payloadCase_ == 4) {
+          return (com.gridmr.proto.Heartbeat) payload_;
+        }
+        return com.gridmr.proto.Heartbeat.getDefaultInstance();
+      }
+    }
+    /**
+     * <code>.gridmr.Heartbeat heartbeat = 4;</code>
+     */
+    private com.google.protobuf.SingleFieldBuilderV3<
+        com.gridmr.proto.Heartbeat, com.gridmr.proto.Heartbeat.Builder, com.gridmr.proto.HeartbeatOrBuilder> 
+        getHeartbeatFieldBuilder() {
+      if (heartbeatBuilder_ == null) {
+        if (!(payloadCase_ == 4)) {
+          payload_ = com.gridmr.proto.Heartbeat.getDefaultInstance();
+        }
+        heartbeatBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+            com.gridmr.proto.Heartbeat, com.gridmr.proto.Heartbeat.Builder, com.gridmr.proto.HeartbeatOrBuilder>(
+                (com.gridmr.proto.Heartbeat) payload_,
+                getParentForChildren(),
+                isClean());
+        payload_ = null;
+      }
+      payloadCase_ = 4;
+      onChanged();
+      return heartbeatBuilder_;
     }
     @java.lang.Override
     public final Builder setUnknownFields(

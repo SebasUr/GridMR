@@ -95,9 +95,6 @@ public final class ControlServiceGrpc {
   public interface AsyncService {
 
     /**
-     * <pre>
-     * Bidirectional stream: worker calls this and keeps it open.
-     * </pre>
      */
     default io.grpc.stub.StreamObserver<com.gridmr.proto.WorkerToMaster> workerStream(
         io.grpc.stub.StreamObserver<com.gridmr.proto.MasterToWorker> responseObserver) {
@@ -133,9 +130,6 @@ public final class ControlServiceGrpc {
     }
 
     /**
-     * <pre>
-     * Bidirectional stream: worker calls this and keeps it open.
-     * </pre>
      */
     public io.grpc.stub.StreamObserver<com.gridmr.proto.WorkerToMaster> workerStream(
         io.grpc.stub.StreamObserver<com.gridmr.proto.MasterToWorker> responseObserver) {
