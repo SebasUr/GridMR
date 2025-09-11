@@ -4,6 +4,8 @@
 #include <chrono>
 #include <thread>
 #include <vector>
+#include <mutex>
+#include <atomic>
 
 #include "gridmr.pb.h"
 #include "gridmr.grpc.pb.h"
@@ -38,6 +40,10 @@ class WorkerClient {
     // Abrimos stream bidireccional entre el worker y master.
     auto stream = std::shared_ptr<ClientReaderWriter<WorkerToMaster, MasterToWorker>>(stub_->WorkerStream(&ctx));
 
+    // Sincronización para todas las escrituras al stream (Write no reentrante desde múltiples hilos)
+    std::mutex write_mu;
+    std::atomic<bool> running{true};
+
     /* Explicación
     * Se envia mensaje de identificación Hello con
     * worker_id
@@ -50,7 +56,23 @@ class WorkerClient {
     info->set_worker_id(envOr("HOSTNAME", "worker-1"));
     info->set_host(envOr("HOSTNAME", "worker"));
     info->set_cpu(1);
-    stream->Write(hello);
+    { std::lock_guard<std::mutex> lk(write_mu); stream->Write(hello); }
+
+    // Hilo de heartbeats periódicos para evitar expiración por falta de latidos
+    std::thread hb([&]{
+      while (running.load()) {
+        WorkerToMaster hbmsg;
+        auto* hb = hbmsg.mutable_heartbeat();
+        hb->set_worker_id(envOr("HOSTNAME", "worker-1"));
+        hb->set_cpu_usage(0.0f);
+        hb->set_ram_usage(0.0f);
+        auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        hb->set_timestamp(static_cast<long long>(now_ms));
+        { std::lock_guard<std::mutex> lk(write_mu); stream->Write(hbmsg); }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+      }
+    });
 
     // El worker escucha en loop tareas asignadas por el master.
     MasterToWorker msg;
@@ -89,7 +111,7 @@ class WorkerClient {
                     p->set_map_id(mid);
                     p->set_partition_id(pid);
                     p->set_uri(dest);
-                    stream->Write(partMsg);
+                    { std::lock_guard<std::mutex> lk(write_mu); stream->Write(partMsg); }
                     }   
                 }
 
@@ -100,7 +122,7 @@ class WorkerClient {
                 st->set_state(TaskStatus::COMPLETED);
                 st->set_progress(100);
                 st->set_message("done");
-                stream->Write(statusMsg);
+                { std::lock_guard<std::mutex> lk(write_mu); stream->Write(statusMsg); }
             }
 
             // En el caso de que la tarea sea REDUCE
@@ -121,12 +143,14 @@ class WorkerClient {
                 st->set_state(TaskStatus::COMPLETED);
                 st->set_progress(100);
                 st->set_message(resultUri.empty()?"reduce_upload_failed":std::string("result_uri=")+resultUri);
-                stream->Write(statusMsg);
+                { std::lock_guard<std::mutex> lk(write_mu); stream->Write(statusMsg); }
             }
         }
     }
 
     // Finalizamos el stream
+    running.store(false);
+    if (hb.joinable()) hb.join();
     Status s = stream->Finish();
     if (!s.ok()) std::cerr << "Stream finished with error: " << s.error_message() << std::endl;
   }

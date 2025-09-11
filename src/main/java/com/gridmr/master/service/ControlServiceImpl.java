@@ -100,7 +100,8 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
 
     /* Construye las tareas MAP iniciales y las encola */
     private void buildAndEnqueueMapTasks() {
-        int nReducers = Integer.parseInt(Env.getEnvOrDefault("MR_N_REDUCERS", "1"));
+        int configuredReducers = Integer.parseInt(Env.getEnvOrDefault("MR_N_REDUCERS", "1"));
+        this.nReducers = configuredReducers; // <-- usar campo para consistencia global
         String binUri = Env.getEnvOrDefault("MR_MAP_BIN_URI", ""); // no forzamos por defecto
 
         List<AssignTask> tasks = new ArrayList<>();
@@ -114,7 +115,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                         .setJobId(state.getJobId())
                         .setType(AssignTask.TaskType.MAP)
                         .setReducerId(0)
-                        .setNReducers(nReducers);
+                        .setNReducers(this.nReducers);
                 for (String uri : group) {
                     b.addSplitUris(uri);
                 }
@@ -130,7 +131,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                         .setType(AssignTask.TaskType.MAP)
                         .addSplitUris(mapInputSplits.get(i))
                         .setReducerId(0)
-                        .setNReducers(nReducers);
+                        .setNReducers(this.nReducers);
                 if (!binUri.isEmpty()) b.setBinaryUri(binUri);
                 tasks.add(b.build());
             }
