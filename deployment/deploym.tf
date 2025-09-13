@@ -264,11 +264,13 @@ resource "aws_instance" "master" {
               mkdir -p /shared
               echo "${aws_efs_file_system.gridmr.dns_name}:/ /shared nfs4 defaults,_netdev,nofail,x-systemd.automount 0 0" >> /etc/fstab
               systemctl daemon-reload
+              sleep 100
               mount -a
               systemctl daemon-reload
               systemctl restart remote-fs.target || true
               sudo chown ubuntu:ubuntu /shared
               sudo chmod 777 /shared
+              git clone https://github.com/SebasUr/GridMR.git && cd GridMR && git switch dev && git switch feature/fsmigrate && cd deployment/scripts && sudo ./master.sh
               EOF
 
   tags = {
@@ -301,6 +303,8 @@ resource "aws_instance" "workers" {
               systemctl restart remote-fs.target || true
               sudo chown ubuntu:ubuntu /shared
               sudo chmod 777 /shared
+              export HOSTNAME
+              git clone https://github.com/SebasUr/GridMR.git && cd GridMR && git switch dev && git switch feature/fsmigrate && cd deployment/scripts && sudo ./worker.sh
               EOF
 
   tags = {
