@@ -3,6 +3,7 @@ package com.gridmr.master;
 import com.gridmr.master.service.ControlServiceImpl;
 import com.gridmr.master.tasks.SchedulerState;
 import com.gridmr.master.util.Env;
+import com.gridmr.master.http.HttpJobServer;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 
@@ -16,18 +17,23 @@ public class MasterServer {
 
     private final int port;
     private Server server;
+    private HttpJobServer http;
 
     public MasterServer(int port) {
         this.port = port;
     }
 
     public void start() throws IOException {
-        SchedulerState state = new SchedulerState(UUID.randomUUID().toString());
+    SchedulerState state = new SchedulerState(UUID.randomUUID().toString());
+    ControlServiceImpl control = new ControlServiceImpl(state);
     server = ServerBuilder.forPort(port)
-        .addService(new ControlServiceImpl(state))
+        .addService(control)
                 .build()
                 .start();
         System.out.println("Master gRPC server started on port " + port);
+    int httpPort = Integer.parseInt(Env.getEnvOrDefault("MASTER_HTTP_PORT", "8080"));
+    http = new HttpJobServer(control, httpPort);
+    http.start();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.err.println("Shutting down master...");
             MasterServer.this.stop();
@@ -38,6 +44,9 @@ public class MasterServer {
     public void stop() {
         if (server != null) {
             server.shutdown();
+        }
+        if (http != null) {
+            http.stop();
         }
     }
 

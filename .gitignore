@@ -33,3 +33,14 @@ generated/
 
 # Local test data outputs
 /cpp/worker/*.tmp
+
+# terrafirn
+deployment.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+crash.log
+terraform.tfvars
+*.tfvars.json
+override.tf
+override.tf.json

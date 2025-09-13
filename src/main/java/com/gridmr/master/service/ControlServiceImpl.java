@@ -38,6 +38,9 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     private int totalMaps = 0;
     private volatile boolean reducersScheduled = false;
     private int nReducers = 1;
+    private String currentJobId = null; // set on submit
+    private String mapBinUri = "";
+    private String reduceBinUri = "";
     private volatile boolean finalConcatenated = false;
 
     // mapId -> bitset de reducers recibidos (particiones intermedias)
@@ -57,58 +60,92 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     private final long hbWarnStaleMs = Long.parseLong(Env.getEnvOrDefault("HEARTBEAT_LOG_STALE_MS", "5000"));
 
     // Optional start gating: wait for N workers and/or a delay before enqueuing MAP tasks
-    private final int minWorkersToStart = Integer.parseInt(Env.getEnvOrDefault("MR_MIN_WORKERS", "3"));
-    private final long startDelayMs = Long.parseLong(Env.getEnvOrDefault("MR_START_DELAY_MS", "0"));
-    private final long createdAtMs = System.currentTimeMillis();
+    private int minWorkersToStart = Integer.parseInt(Env.getEnvOrDefault("MR_MIN_WORKERS", "3"));
+    private long startDelayMs = Long.parseLong(Env.getEnvOrDefault("MR_START_DELAY_MS", "0"));
+    private long createdAtMs = System.currentTimeMillis();
     private volatile boolean mapsEnqueued = false;
 
     public ControlServiceImpl(SchedulerState state) {
         this.state = state;
-        initializeMapSplits();
-        maybeStartJobIfReady();
-        startHeartbeatMonitor(); // <-- iniciar monitor
+        // No auto-start: job is submitted via HTTP
+        startHeartbeatMonitor();
     }
 
-    /* Lee MR_INPUT_URIS (local paths or http URLs) y genera la lista de splits */
-    private void initializeMapSplits() {
-        String urisEnv = Env.getEnvOrDefault("MR_INPUT_URIS", "input.txt").trim();
-        if (urisEnv.isEmpty()) {
-            throw new IllegalStateException("MR_INPUT_URIS está vacío");
+    // === Job submission API (called by HTTP layer) ===
+    public synchronized String submitJob(List<String> inputUris,
+                                         Integer nReducers,
+                                         String mapBin,
+                                         String reduceBin,
+                                         Integer desiredMaps,
+                                         Boolean groupPartitioning,
+                                         Integer minWorkers,
+                                         Long startDelayMsOverride) {
+        if (inputUris == null || inputUris.isEmpty()) {
+            throw new IllegalArgumentException("inputUris vacío");
         }
-        List<String> inputs = new ArrayList<>();
-        for (String raw : urisEnv.split(",")) {
-            String u = raw.trim();
-            if (!u.isEmpty()) inputs.add(u);
+        // Sanitize quotes and trim
+        List<String> cleanedInputs = new ArrayList<>();
+        for (String raw : inputUris) {
+            if (raw == null) continue;
+            String s = raw.trim();
+            if ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'"))) {
+                s = s.substring(1, s.length()-1).trim();
+            }
+            cleanedInputs.add(s);
+        }
+        // Validate URIs existence (local paths). HTTP URLs are allowed without check.
+        String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
+        for (String s : cleanedInputs) {
+            if (s.isEmpty()) continue;
+            if (s.startsWith("http://") || s.startsWith("https://")) continue;
+            java.nio.file.Path p = s.startsWith("/") ? java.nio.file.Paths.get(s)
+                    : java.nio.file.Paths.get(sharedRoot, s);
+            if (!java.nio.file.Files.exists(p)) {
+                throw new IllegalArgumentException("No existe input: " + p);
+            }
         }
 
-        boolean groupMode = "1".equals(Env.getEnvOrDefault("MR_GROUP_PARTITIONING", "0"));
-        int desiredMaps = Integer.parseInt(Env.getEnvOrDefault("MR_DESIRED_MAPS",
-                String.valueOf(inputs.size())));
+        // Reset per-job state
+        mapsEnqueued = false;
+        reducersScheduled = false;
+        finalConcatenated = false;
+        mapParts.clear();
+        inFlight.clear();
+        mapsCompleted.set(0);
 
-        if (!groupMode || desiredMaps <= 0 || desiredMaps >= inputs.size()) {
-            // Comportamiento original (simple)
+        // Build splits/groups
+        boolean groupMode = Boolean.TRUE.equals(groupPartitioning);
+        int desMaps = (desiredMaps == null || desiredMaps <= 0) ? cleanedInputs.size() : desiredMaps;
+        if (!groupMode || desMaps >= cleanedInputs.size()) {
             groupedMapInputs = Collections.emptyList();
             mapInputSplits.clear();
-            mapInputSplits.addAll(inputs);
+            mapInputSplits.addAll(cleanedInputs);
             totalMaps = mapInputSplits.size();
             System.out.println("Initialized MAP splits: " + totalMaps + " (simple)");
-            return;
+        } else {
+            List<List<String>> groups = Partitioner.partition(cleanedInputs, desMaps);
+            groupedMapInputs = groups;
+            mapInputSplits.clear();
+            totalMaps = groups.size();
+            System.out.println("Initialized MAP splits: " + totalMaps + " (grouped from " + cleanedInputs.size() + ")");
         }
 
-        // Agrupación: repartimos inputs en desiredMaps grupos
-        List<List<String>> groups = Partitioner.partition(inputs, desiredMaps);
-        groupedMapInputs = groups;
-        mapInputSplits.clear(); // mantenemos limpio (usaremos groupedMapInputs)
-        totalMaps = groups.size();
-        System.out.println("Initialized MAP splits: " + totalMaps + " (grouped from " +
-                inputs.size() + " inputs; desired=" + desiredMaps + ")");
+        // Set config
+        this.nReducers = (nReducers == null || nReducers <= 0) ? 1 : nReducers;
+        this.mapBinUri = mapBin == null ? "" : mapBin;
+        this.reduceBinUri = reduceBin == null ? "" : reduceBin;
+        if (minWorkers != null && minWorkers > 0) this.minWorkersToStart = minWorkers;
+        if (startDelayMsOverride != null && startDelayMsOverride >= 0) this.startDelayMs = startDelayMsOverride;
+        this.createdAtMs = System.currentTimeMillis();
+        this.currentJobId = java.util.UUID.randomUUID().toString();
+
+        maybeStartJobIfReady();
+        return this.currentJobId;
     }
 
     /* Construye las tareas MAP iniciales y las encola */
     private void buildAndEnqueueMapTasks() {
-    int configuredReducers = Integer.parseInt(Env.getEnvOrDefault("MR_N_REDUCERS", "1"));
-        this.nReducers = configuredReducers; // <-- usar campo para consistencia global
-        String binUri = Env.getEnvOrDefault("MR_MAP_BIN_URI", ""); // no forzamos por defecto
+        if (currentJobId == null) return; // no job submitted
 
         List<AssignTask> tasks = new ArrayList<>();
 
@@ -116,29 +153,29 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             // Modo agrupado: cada grupo -> una tarea con múltiples split_uris
             for (int i = 0; i < groupedMapInputs.size(); i++) {
                 List<String> group = groupedMapInputs.get(i);
-                AssignTask.Builder b = AssignTask.newBuilder()
-                        .setTaskId("map-" + i)
-                        .setJobId(state.getJobId())
+        AssignTask.Builder b = AssignTask.newBuilder()
+            .setTaskId("map-" + i)
+            .setJobId(currentJobId)
                         .setType(AssignTask.TaskType.MAP)
                         .setReducerId(0)
                         .setNReducers(this.nReducers);
                 for (String uri : group) {
                     b.addSplitUris(uri);
                 }
-                if (!binUri.isEmpty()) b.setBinaryUri(binUri);
+                if (!this.mapBinUri.isEmpty()) b.setBinaryUri(this.mapBinUri);
                 tasks.add(b.build());
             }
         } else {
             // Comportamiento simple original: una URI por tarea
             for (int i = 0; i < mapInputSplits.size(); i++) {
                 AssignTask.Builder b = AssignTask.newBuilder()
-                        .setTaskId("map-" + i)
-                        .setJobId(state.getJobId())
+            .setTaskId("map-" + i)
+            .setJobId(currentJobId)
                         .setType(AssignTask.TaskType.MAP)
                         .addSplitUris(mapInputSplits.get(i))
                         .setReducerId(0)
                         .setNReducers(this.nReducers);
-                if (!binUri.isEmpty()) b.setBinaryUri(binUri);
+        if (!this.mapBinUri.isEmpty()) b.setBinaryUri(this.mapBinUri);
                 tasks.add(b.build());
             }
         }
@@ -262,7 +299,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                             if (idx >= 0 && idx < mapInputSplits.size()) {
                                 AssignTask.Builder b = AssignTask.newBuilder()
                                         .setTaskId("map-" + idx)
-                                        .setJobId(state.getJobId())
+                                        .setJobId(currentJobId)
                                         .setType(AssignTask.TaskType.MAP)
                                         .addSplitUris(mapInputSplits.get(idx))
                                         .setReducerId(0)
@@ -316,20 +353,20 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 if (reducersScheduled) return;
                 reducersScheduled = true;
                 int nReducersLocal = nReducers; // usar campo externo
-                String reduceBin = Env.getEnvOrDefault("MR_REDUCE_BIN_URI", "");
+                String reduceBin = ControlServiceImpl.this.reduceBinUri;
                 System.out.println("[Reducers] All MAP parts uploaded; scheduling " + nReducersLocal + " REDUCE tasks...");
                 String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
                 List<AssignTask> reducers = new ArrayList<>();
                 for (int r = 0; r < nReducersLocal; r++) {
                     AssignTask.Builder rb = AssignTask.newBuilder()
                             .setTaskId("reduce-" + r)
-                            .setJobId(state.getJobId())
+                            .setJobId(currentJobId)
                             .setType(AssignTask.TaskType.REDUCE)
                             .setReducerId(r)
                             .setNReducers(nReducersLocal);
                     if (!reduceBin.isEmpty()) rb.setBinaryUri(reduceBin);
                     for (int mid = 0; mid < totalMaps; mid++) {
-                        String uri = sharedRoot + "/intermediate/" + state.getJobId()
+                        String uri = sharedRoot + "/intermediate/" + currentJobId
                                 + "/part-" + r + "-map-" + mid + ".txt";
                         rb.addSplitUris(uri);
                     }
@@ -376,8 +413,8 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     private synchronized void maybeConcatenateFinal() {
         if (!reducersScheduled || finalConcatenated) return;
         // Count reducers done by probing results existence
-        String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
-        String jobRoot = sharedRoot + "/results/" + state.getJobId();
+    String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
+    String jobRoot = sharedRoot + "/results/" + currentJobId;
         try {
             java.nio.file.Path jobDir = java.nio.file.Paths.get(jobRoot);
             if (!java.nio.file.Files.isDirectory(jobDir)) return;
@@ -436,7 +473,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
 
     // Encola MAPs cuando: no encolados aún, alcanzado delay opcional y número mínimo de workers conectados
     private synchronized void maybeStartJobIfReady() {
-        if (mapsEnqueued) return;
+    if (currentJobId == null || mapsEnqueued) return;
         long now = System.currentTimeMillis();
         int connected = clients.size();
         boolean delayOk = (now - createdAtMs) >= startDelayMs;
