@@ -1,5 +1,5 @@
 #include "gridmr/worker/mapreduce/reducer.h"
-#include "gridmr/worker/common/s3.h"
+#include "gridmr/worker/common/fs.h"
 #include "gridmr/worker/common/env.h"
 #include <fstream>
 #include <iostream>
@@ -72,19 +72,23 @@ std::string do_reduce_collect_output(const std::string& binary_uri, int split_co
   std::string concatPath = concat_reduce_inputs(split_count);
   std::string out = run_reducer_and_capture(reducer, concatPath);
 
-  // Persist and upload
+  // Persist to local tmp
   std::string outLocal = std::string("/tmp/reduce-out-") + std::to_string(reducer_id) + ".txt";
   {
     std::ofstream ofs(outLocal, std::ios::binary);
     ofs.write(out.data(), (std::streamsize)out.size());
   }
-  S3Loc loc; if (!parse_s3_uri(example_input_uri, loc)) loc.bucket = "gridmr";
-  std::string destS3 = std::string("s3://") + loc.bucket + "/results/" + job_id + "/part-" + std::to_string(reducer_id) + ".txt";
-  if (!upload_file_to_minio(outLocal, destS3)) {
-    std::cerr << "[worker] reduce output upload failed: " << destS3 << std::endl;
+  // Copy to shared filesystem (EFS/NFS)
+  std::string root = envOr("SHARED_DATA_ROOT", "/shared");
+  std::string dest = root + std::string("/results/") + job_id + "/part-" + std::to_string(reducer_id) + ".txt";
+  // ensure dir exists
+  std::string mkdirCmd = std::string("mkdir -p '") + root + "/results/" + job_id + "'";
+  std::system(mkdirCmd.c_str());
+  if (!upload_file_to_fs(outLocal, dest)) {
+    std::cerr << "[worker] reduce output copy failed: " << dest << std::endl;
     return "";
   }
-  return destS3;
+  return dest;
 }
 
 } // namespace gridmr_worker

@@ -1,5 +1,5 @@
 #include "gridmr/worker/mapreduce/mapper.h"
-#include "gridmr/worker/common/s3.h"
+#include "gridmr/worker/common/fs.h"
 #include "gridmr/worker/common/env.h"
 #include <fstream>
 #include <iostream>
@@ -41,13 +41,13 @@ bool ensure_mapper_binary(const std::string& binary_uri, std::string& out_path){
   }
 }
 
-void do_map(const std::string& s3_uri, const std::string& binary_uri, int /*reducer_id*/, int n_reducers) {
+void do_map(const std::string& uri, const std::string& binary_uri, int /*reducer_id*/, int n_reducers) {
   std::string input_path = "/tmp/map_input.txt";
-  if (!download_url_to_file(s3_uri, input_path)){
-    std::cerr << "[worker] S3 download failed, falling back to local testdata for URI: " << s3_uri << std::endl;
-    std::string prefix = envOr("MAP_LOCAL_PREFIX", "/src/testdata");
-    auto pos = s3_uri.find_last_of('/');
-    std::string file = (pos == std::string::npos) ? s3_uri : s3_uri.substr(pos + 1);
+  if (!download_url_to_file(uri, input_path)){
+    std::cerr << "[worker] input copy failed, trying SHARED_DATA_ROOT for: " << uri << std::endl;
+    std::string prefix = envOr("SHARED_DATA_ROOT", "/shared");
+    auto pos = uri.find_last_of('/');
+    std::string file = (pos == std::string::npos) ? uri : uri.substr(pos + 1);
     input_path = prefix + "/" + file;
   }
   // Print input in single line

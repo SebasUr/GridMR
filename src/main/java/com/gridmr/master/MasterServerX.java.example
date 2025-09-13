@@ -81,14 +81,14 @@ public class MasterServer {
 
         static {
             // Initialize split queue once from env
-            String multi = getEnvOrDefault("MR_INPUT_S3_URIS", "").trim();
+            String multi = getEnvOrDefault("MR_INPUT_URIS", "").trim();
             if (!multi.isEmpty()) {
                 Arrays.stream(multi.split(","))
                         .map(String::trim)
                         .filter(s -> !s.isEmpty())
                         .forEach(PENDING_SPLITS::add);
             } else {
-                String single = getEnvOrDefault("MR_INPUT_S3_URI", "s3://gridmr/input.txt").trim();
+                String single = getEnvOrDefault("MR_INPUT_URI", "input.txt").trim();
                 if (!single.isEmpty()) {
                     // Allow comma-separated in MR_INPUT_S3_URI as well
                     if (single.contains(",")) {
@@ -178,7 +178,7 @@ public class MasterServer {
                             .addSplitUris(split)
                             .setReducerId(0)
                             .setNReducers(nReducers);
-                    String binUri = getEnvOrDefault("MR_MAP_BIN_URI", "s3://gridmr/map.cc");
+                    String binUri = getEnvOrDefault("MR_MAP_BIN_URI", "map.cc");
                     if (!binUri.isEmpty()) {
                         ab.setBinaryUri(binUri);
                     }
@@ -202,24 +202,14 @@ public class MasterServer {
                                 .setType(AssignTask.TaskType.REDUCE)
                                 .setReducerId(pid)
                                 .setNReducers(nReducers);
-                        String reduceBin = getEnvOrDefault("MR_REDUCE_BIN_URI", "s3://gridmr/reduce.cc");
+                        String reduceBin = getEnvOrDefault("MR_REDUCE_BIN_URI", "reduce.cc");
                         if (!reduceBin.isEmpty()) {
                             rb.setBinaryUri(reduceBin);
                         }
-                        // Derive bucket from MR_INPUT_S3_URIS (or MR_INPUT_S3_URI)
-                        String example = getEnvOrDefault("MR_INPUT_S3_URI", "");
-                        if (example.contains(",")) example = example.split(",")[0].trim();
-                        if (example.isEmpty()) example = getEnvOrDefault("MR_INPUT_S3_URIS", "");
-                        if (example.contains(",")) example = example.split(",")[0].trim();
-                        String bucket = "gridmr";
-                        int s = example.indexOf("s3://");
-                        if (s == 0) {
-                            int slash = example.indexOf('/', 5);
-                            if (slash > 5) bucket = example.substring(5, slash);
-                        }
-                        // Collect all map part URIs written by workers
+                        String sharedRoot = getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
+                        // Collect all map part paths written by workers
                         for (int mid = 0; mid < totalSplits; ++mid) {
-                            String uri = "s3://" + bucket + "/intermediate/" + JOB_ID + "/part-" + pid + "-map-" + mid + ".txt";
+                            String uri = sharedRoot + "/intermediate/" + JOB_ID + "/part-" + pid + "-map-" + mid + ".txt";
                             rb.addSplitUris(uri);
                         }
                         MasterToWorker out = MasterToWorker.newBuilder().setAssign(rb.build()).build();

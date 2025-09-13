@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(Protobuf REQUIRED)
 find_package(gRPC REQUIRED)
 find_package(Threads REQUIRED)
-find_package(AWSSDK QUIET COMPONENTS s3)
 
 # Proto paths
 set(PROTO_DIR ${CMAKE_SOURCE_DIR}/../../src/main/proto)
@@ -39,10 +38,7 @@ add_library(gridmr_proto
 target_include_directories(gridmr_proto PUBLIC ${GEN_DIR})
 target_link_libraries(gridmr_proto PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-if(AWSSDK_FOUND)
-	target_link_libraries(gridmr_proto PUBLIC aws-cpp-sdk-s3)
-	target_compile_definitions(gridmr_proto PUBLIC GRIDMR_HAVE_AWSSDK)
-endif()
+## No AWS SDK linkage needed; IO is local filesystem now.
 
 # Worker library
 file(GLOB_RECURSE WORKER_SOURCES

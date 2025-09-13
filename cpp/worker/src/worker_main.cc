@@ -11,7 +11,7 @@
 #include "gridmr.grpc.pb.h"
 
 #include "gridmr/worker/common/env.h"
-#include "gridmr/worker/common/s3.h"
+#include "gridmr/worker/common/fs.h"
 #include "gridmr/worker/mapreduce/mapper.h"
 #include "gridmr/worker/mapreduce/reducer.h"
 
@@ -98,12 +98,11 @@ class WorkerClient {
                 int R = std::max(1, t.n_reducers());
                 for (int pid = 0; pid < R; ++pid) {
                 std::string local = "/tmp/to-reduce-input-" + std::to_string(pid) + ".txt";
-                std::string split = t.split_uris(0);
-                S3Loc loc; if (!parse_s3_uri(split, loc)) loc.bucket = "gridmr";
-                std::string dest = std::string("s3://") + loc.bucket + "/intermediate/" + t.job_id() + "/part-" + std::to_string(pid) + "-" + t.task_id() + ".txt";
+                std::string root = envOr("SHARED_DATA_ROOT", "/shared");
+                std::string dest = root + std::string("/intermediate/") + t.job_id() + "/part-" + std::to_string(pid) + "-" + t.task_id() + ".txt";
 
-                // Subimos el archivo local a MinIO y notificamos al master
-                if (upload_file_to_minio(local, dest)) {
+                // Copiamos a shared FS y notificamos al master
+                if (upload_file_to_fs(local, dest)) {
                     WorkerToMaster partMsg;
                     auto *p = partMsg.mutable_part();
                     p->set_job_id(t.job_id());
@@ -128,7 +127,7 @@ class WorkerClient {
             // En el caso de que la tarea sea REDUCE
             if (t.type() == AssignTask::REDUCE && t.split_uris_size() > 0) {
 
-                // Descargamos los splits
+                // Copiamos los splits
                 for (int i = 0; i < t.split_uris_size(); ++i) {
                     std::string in = t.split_uris(i);
                     std::string dest = std::string("/tmp/reduce-input-") + std::to_string(i) + ".txt";

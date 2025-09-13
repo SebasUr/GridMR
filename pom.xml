@@ -11,8 +11,7 @@
         <maven.compiler.target>1.8</maven.compiler.target>
         <protobuf.version>3.25.3</protobuf.version>
         <grpc.version>1.63.0</grpc.version>
-        <aws.sdk.version>2.25.22</aws.sdk.version>
-        <minio.version>8.5.7</minio.version>
+    <aws.sdk.version>2.25.22</aws.sdk.version>
     </properties>
     <dependencies>
         <!-- gRPC Java -->
@@ -31,18 +30,12 @@
             <artifactId>grpc-stub</artifactId>
             <version>${grpc.version}</version>
         </dependency>
-        <!-- AWS SDK v2 S3 -->
+        <!-- AWS SDK v2 S3 (unused) left commented intentionally -->
         <!-- <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>${aws.sdk.version}</version>
         </dependency> -->
-        <!-- MinIO Java client (alternativa a AWS S3) -->
-        <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
-            <version>${minio.version}</version>
-        </dependency>
         <!-- Protobuf -->
         <dependency>
             <groupId>com.google.protobuf</groupId>

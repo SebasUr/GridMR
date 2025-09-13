@@ -20,7 +20,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
         ca-certificates \
     curl \
-    awscli \
     build-essential \
         libprotobuf32 \
     libprotobuf-dev \
@@ -40,4 +39,5 @@ ENV MASTER_HOST=master
 ENV MASTER_PORT=50051
 ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
 ENV MAP_LOCAL_PREFIX=/usr/local/share/gridmr/testdata
+ENV SHARED_DATA_ROOT=/shared
 ENTRYPOINT ["/usr/local/bin/worker"]

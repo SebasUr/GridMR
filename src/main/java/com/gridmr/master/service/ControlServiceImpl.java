@@ -12,7 +12,6 @@ import java.util.BitSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.*; // <-- añadido para ScheduledExecutorService
-import java.util.function.Consumer;
 
 /**
  * ControlServiceImpl:
@@ -39,6 +38,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     private int totalMaps = 0;
     private volatile boolean reducersScheduled = false;
     private int nReducers = 1;
+    private volatile boolean finalConcatenated = false;
 
     // mapId -> bitset de reducers recibidos (particiones intermedias)
     private final Map<Integer, BitSet> mapParts = new ConcurrentHashMap<>();
@@ -56,18 +56,24 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     private final long hbCheckPeriodMs = Long.parseLong(Env.getEnvOrDefault("HEARTBEAT_CHECK_PERIOD_MS", "3000"));
     private final long hbWarnStaleMs = Long.parseLong(Env.getEnvOrDefault("HEARTBEAT_LOG_STALE_MS", "5000"));
 
+    // Optional start gating: wait for N workers and/or a delay before enqueuing MAP tasks
+    private final int minWorkersToStart = Integer.parseInt(Env.getEnvOrDefault("MR_MIN_WORKERS", "3"));
+    private final long startDelayMs = Long.parseLong(Env.getEnvOrDefault("MR_START_DELAY_MS", "0"));
+    private final long createdAtMs = System.currentTimeMillis();
+    private volatile boolean mapsEnqueued = false;
+
     public ControlServiceImpl(SchedulerState state) {
         this.state = state;
         initializeMapSplits();
-        buildAndEnqueueMapTasks();
+        maybeStartJobIfReady();
         startHeartbeatMonitor(); // <-- iniciar monitor
     }
 
-    /* Lee MR_INPUT_S3_URIS y genera la lista de splits */
+    /* Lee MR_INPUT_URIS (local paths or http URLs) y genera la lista de splits */
     private void initializeMapSplits() {
-        String urisEnv = Env.getEnvOrDefault("MR_INPUT_S3_URIS", "s3://gridmr/input.txt").trim();
+        String urisEnv = Env.getEnvOrDefault("MR_INPUT_URIS", "input.txt").trim();
         if (urisEnv.isEmpty()) {
-            throw new IllegalStateException("MR_INPUT_S3_URIS está vacío");
+            throw new IllegalStateException("MR_INPUT_URIS está vacío");
         }
         List<String> inputs = new ArrayList<>();
         for (String raw : urisEnv.split(",")) {
@@ -100,7 +106,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
 
     /* Construye las tareas MAP iniciales y las encola */
     private void buildAndEnqueueMapTasks() {
-        int configuredReducers = Integer.parseInt(Env.getEnvOrDefault("MR_N_REDUCERS", "1"));
+    int configuredReducers = Integer.parseInt(Env.getEnvOrDefault("MR_N_REDUCERS", "1"));
         this.nReducers = configuredReducers; // <-- usar campo para consistencia global
         String binUri = Env.getEnvOrDefault("MR_MAP_BIN_URI", ""); // no forzamos por defecto
 
@@ -209,6 +215,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 state.updateHeartbeat(synthetic);
                 workerLastHeartbeat.put(workerId, synthetic.getTimestamp());
                 System.out.println("Worker connected: " + workerId + " cpu=" + info.getCpu());
+                maybeStartJobIfReady();
                 tryAssign(workerId); // asignar inmediatamente
             }
 
@@ -240,6 +247,9 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                             int done = mapsCompleted.incrementAndGet();
                             System.out.println("MAP completed: " + done + "/" + totalMaps);
                             maybeScheduleReducers();
+                        } else if (st.getTaskId().startsWith("reduce-")) {
+                            // Check whether all reducers finished to concatenate
+                            maybeConcatenateFinal();
                         }
                         tryAssign(workerId);
                         break;
@@ -308,12 +318,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 int nReducersLocal = nReducers; // usar campo externo
                 String reduceBin = Env.getEnvOrDefault("MR_REDUCE_BIN_URI", "");
                 System.out.println("[Reducers] All MAP parts uploaded; scheduling " + nReducersLocal + " REDUCE tasks...");
-                String example = mapInputSplits.isEmpty() ? "s3://gridmr/input.txt" : mapInputSplits.get(0);
-                String bucket = "gridmr";
-                if (example.startsWith("s3://")) {
-                    int slash = example.indexOf('/', 5);
-                    if (slash > 5) bucket = example.substring(5, slash);
-                }
+                String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
                 List<AssignTask> reducers = new ArrayList<>();
                 for (int r = 0; r < nReducersLocal; r++) {
                     AssignTask.Builder rb = AssignTask.newBuilder()
@@ -324,7 +329,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                             .setNReducers(nReducersLocal);
                     if (!reduceBin.isEmpty()) rb.setBinaryUri(reduceBin);
                     for (int mid = 0; mid < totalMaps; mid++) {
-                        String uri = "s3://" + bucket + "/intermediate/" + state.getJobId()
+                        String uri = sharedRoot + "/intermediate/" + state.getJobId()
                                 + "/part-" + r + "-map-" + mid + ".txt";
                         rb.addSplitUris(uri);
                     }
@@ -367,6 +372,42 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
     }
 
+    // When all reducers complete, concatenate part-*.txt into final.txt
+    private synchronized void maybeConcatenateFinal() {
+        if (!reducersScheduled || finalConcatenated) return;
+        // Count reducers done by probing results existence
+        String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
+        String jobRoot = sharedRoot + "/results/" + state.getJobId();
+        try {
+            java.nio.file.Path jobDir = java.nio.file.Paths.get(jobRoot);
+            if (!java.nio.file.Files.isDirectory(jobDir)) return;
+            // We expect part-0.txt .. part-(nReducers-1).txt
+            List<java.nio.file.Path> parts = new ArrayList<>();
+            for (int i = 0; i < nReducers; i++) {
+                java.nio.file.Path p = jobDir.resolve("part-" + i + ".txt");
+                if (!java.nio.file.Files.exists(p)) return; // not yet
+                parts.add(p);
+            }
+            // Concatenate in order
+            java.nio.file.Path finalOut = jobDir.resolve("final.txt");
+            try (java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(finalOut, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING))) {
+                byte[] buf = new byte[8192];
+                for (java.nio.file.Path p : parts) {
+                    try (java.io.InputStream is = java.nio.file.Files.newInputStream(p)) {
+                        int r;
+                        while ((r = is.read(buf)) != -1) {
+                            bos.write(buf, 0, r);
+                        }
+                    }
+                }
+            }
+            finalConcatenated = true;
+            System.out.println("[Final] Concatenated results into: " + finalOut);
+        } catch (Exception e) {
+            System.err.println("[Final] Concatenation error: " + e.getMessage());
+        }
+    }
+
     // === NUEVO: monitor de heartbeats ===
     private void startHeartbeatMonitor() {
         hbMonitor.scheduleAtFixedRate(this::scanHeartbeats, hbCheckPeriodMs, hbCheckPeriodMs, TimeUnit.MILLISECONDS);
@@ -389,7 +430,21 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 System.out.println("[HB] WARN worker " + wid + " heartbeat stale=" + delta + "ms");
             }
         }
+        maybeStartJobIfReady();
         tryAssignAll();
+    }
+
+    // Encola MAPs cuando: no encolados aún, alcanzado delay opcional y número mínimo de workers conectados
+    private synchronized void maybeStartJobIfReady() {
+        if (mapsEnqueued) return;
+        long now = System.currentTimeMillis();
+        int connected = clients.size();
+        boolean delayOk = (now - createdAtMs) >= startDelayMs;
+        boolean workersOk = connected >= minWorkersToStart;
+        if (delayOk && workersOk) {
+            buildAndEnqueueMapTasks();
+            mapsEnqueued = true;
+        }
     }
 
     // (Opcional) llamar en shutdown del servidor si tienes hook
