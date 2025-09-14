@@ -273,11 +273,12 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                             System.out.println("MAP completed: " + done + "/" + totalMaps);
                             maybeScheduleReducers();
                         } else if (st.getTaskId().startsWith("reduce-")) {
-                            // Attempt concatenation; also schedule a short delayed retry to avoid races on first job
-                            maybeConcatenateFinal();
+                            // Attempt concatenation for the current job id snapshot; schedule a short delayed retry
+                            final String jid = currentJobId;
+                            maybeConcatenateFinalFor(jid);
                             if (!finalConcatenated) {
                                 hbMonitor.schedule(() -> {
-                                    try { maybeConcatenateFinal(); } catch (Exception ignored) {}
+                                    try { maybeConcatenateFinalFor(jid); } catch (Exception ignored) {}
                                 }, 1, TimeUnit.SECONDS);
                             }
                         }
@@ -402,12 +403,12 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
     }
 
-    // When all reducers complete, concatenate part-*.txt into final.txt
-    private synchronized void maybeConcatenateFinal() {
+    // When all reducers complete, concatenate part-*.txt into final.txt for given jobId
+    private synchronized void maybeConcatenateFinalFor(String jobId) {
         if (!reducersScheduled || finalConcatenated) return;
         // Count reducers done by probing results existence
     String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
-    String jobRoot = sharedRoot + "/results/" + currentJobId;
+    String jobRoot = sharedRoot + "/results/" + jobId;
         try {
             java.nio.file.Path jobDir = java.nio.file.Paths.get(jobRoot);
             if (!java.nio.file.Files.isDirectory(jobDir)) return;

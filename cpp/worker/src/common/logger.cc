@@ -15,6 +15,7 @@ static std::mutex g_mu;
 static std::string g_worker_id;
 static std::string g_local_path = "/var/log/gridmr/worker.log";
 static std::string g_shared_dir;
+static std::string g_shared_file;
 
 static std::string now_iso(){
   using namespace std::chrono;
@@ -42,6 +43,7 @@ void log_init(){
   }
   std::string shared_root = envOr("SHARED_DATA_ROOT", "/shared");
   g_shared_dir = shared_root + "/workerlogs";
+  g_shared_file = g_shared_dir + "/worker.log";
   ensure_dirs();
 }
 
@@ -54,9 +56,9 @@ void log_msg(const std::string& msg){
     std::ofstream lf(g_local_path, std::ios::app);
     if (lf.good()) lf << line;
   }
-  // Shared
+  // Shared (single file)
   {
-    std::ofstream sf(g_shared_dir + "/" + g_worker_id + ".log", std::ios::app);
+    std::ofstream sf(g_shared_file, std::ios::app);
     if (sf.good()) sf << line;
   }
 }
