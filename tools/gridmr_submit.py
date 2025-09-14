@@ -14,7 +14,6 @@ REMOTE_BASE = os.getenv("GRIDMR_REMOTE_BASE")
 MASTER_API = os.getenv("GRIDMR_MASTER_API")
 CHUNK_SIZE_MB = int(os.getenv("GRIDMR_CHUNK_SIZE_MB"))
 PEM_FILE = os.getenv("GRIDMR_PEM_FILE")
-MAX_WAIT = int(os.getenv("GRIDMR_MAX_WAIT"))
 
 
 def run(cmd):
@@ -71,21 +70,27 @@ def fetch_result(job_id, local_dir="results"):
     print(f"[downloaded] {local_result}")
     return local_result
 
-def wait_for_result(job_id, poll_interval=10, max_wait=MAX_WAIT):
-    """Espera hasta que el resultado esté disponible en el cluster"""
-    remote_result = f"{REMOTE_BASE}/{job_id}/output/result.txt"
+def remote_file_exists(remote_path):
+    """Verifica por SSH si existe un archivo en el master"""
     pem_opt = f'-i "{PEM_FILE}"'
-    for _ in range(0, max_wait, poll_interval):
-        # Usa ssh para verificar si el archivo existe
-        try:
-            run(f"ssh {pem_opt} {MASTER_SSH} 'test -f {remote_result}'")
-            print("[result ready]")
-            return True
-        except subprocess.CalledProcessError:
-            print("[waiting for result...]")
-            time.sleep(poll_interval)
-    print("Timeout esperando el resultado.")
-    return False
+    cmd = f"ssh {pem_opt} {MASTER_SSH} 'test -f {remote_path}'"
+    print(">>", cmd)
+    # exit code 0 si existe
+    return subprocess.call(cmd, shell=True) == 0
+
+
+def wait_for_result(job_id, timeout=600, poll_interval=5):
+    """Espera hasta que final.txt exista en el master (o timeout)"""
+    remote_result = f"{REMOTE_BASE}/results/{job_id}/final.txt"
+    print(f"[wait] Esperando resultado en {remote_result} (timeout={timeout}s)...")
+    start = time.time()
+    while time.time() - start < timeout:
+        if remote_file_exists(remote_result):
+            print("[wait] Resultado disponible.")
+            return remote_result
+        time.sleep(poll_interval)
+    raise TimeoutError(f"No se encontró el resultado en {remote_result} dentro del tiempo esperado.")
+
 
 def main():
     if len(sys.argv) != 5:
@@ -136,10 +141,14 @@ def main():
         print(f"Failed to notify master: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if wait_for_result(job_id):
-        fetch_result(job_id)
-    else:
-        print("No se pudo descargar el resultado.")
+    # Esperar a que final.txt exista antes de descargar
+    try:
+        wait_for_result(job_id, timeout=600, poll_interval=5)
+    except Exception as e:
+        print(f"[wait error] {e}", file=sys.stderr)
+        sys.exit(1)
+
+    fetch_result(job_id)
 
 
 if __name__ == "__main__":
