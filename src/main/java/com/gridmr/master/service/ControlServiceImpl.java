@@ -1,6 +1,4 @@
 package com.gridmr.master.service;
-
-import com.gridmr.master.Partitioner;
 import com.gridmr.master.tasks.SchedulerState;
 import com.gridmr.master.util.Env;
 import com.gridmr.proto.*;
@@ -113,22 +111,12 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         inFlight.clear();
         mapsCompleted.set(0);
 
-        // Build splits/groups
-        boolean groupMode = Boolean.TRUE.equals(groupPartitioning);
-        int desMaps = (desiredMaps == null || desiredMaps <= 0) ? cleanedInputs.size() : desiredMaps;
-        if (!groupMode || desMaps >= cleanedInputs.size()) {
-            groupedMapInputs = Collections.emptyList();
-            mapInputSplits.clear();
-            mapInputSplits.addAll(cleanedInputs);
-            totalMaps = mapInputSplits.size();
-            System.out.println("Initialized MAP splits: " + totalMaps + " (simple)");
-        } else {
-            List<List<String>> groups = Partitioner.partition(cleanedInputs, desMaps);
-            groupedMapInputs = groups;
-            mapInputSplits.clear();
-            totalMaps = groups.size();
-            System.out.println("Initialized MAP splits: " + totalMaps + " (grouped from " + cleanedInputs.size() + ")");
-        }
+        // Build splits: simple behavior, one URI per MAP task
+        groupedMapInputs = Collections.emptyList();
+        mapInputSplits.clear();
+        mapInputSplits.addAll(cleanedInputs);
+        totalMaps = mapInputSplits.size();
+        System.out.println("Initialized MAP splits: " + totalMaps + " (simple)");
 
         // Set config
         this.nReducers = (nReducers == null || nReducers <= 0) ? 1 : nReducers;
@@ -285,8 +273,13 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                             System.out.println("MAP completed: " + done + "/" + totalMaps);
                             maybeScheduleReducers();
                         } else if (st.getTaskId().startsWith("reduce-")) {
-                            // Check whether all reducers finished to concatenate
+                            // Attempt concatenation; also schedule a short delayed retry to avoid races on first job
                             maybeConcatenateFinal();
+                            if (!finalConcatenated) {
+                                hbMonitor.schedule(() -> {
+                                    try { maybeConcatenateFinal(); } catch (Exception ignored) {}
+                                }, 1, TimeUnit.SECONDS);
+                            }
                         }
                         tryAssign(workerId);
                         break;
