@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "gridmr/worker/common/logger.h"
 
 namespace gridmr_worker {
 
@@ -42,13 +43,13 @@ static std::string resolve_local_path(const std::string& uri){
 bool download_url_to_file(const std::string& url, const std::string& out_path){
   if (is_http(url)){
     std::string cmd = std::string("curl -fsSL ") + url + " -o '" + out_path + "'";
-    std::cerr << "[worker] curl: " << cmd << std::endl;
+    log_msg(std::string("curl: ") + cmd);
     return std::system(cmd.c_str()) == 0;
   }
   // Local copy
   std::string src = resolve_local_path(url);
   std::string cmd = std::string("cp -f -- '") + src + "' '" + out_path + "'";
-  std::cerr << "[worker] cp: " << cmd << std::endl;
+  log_msg(std::string("cp: ") + cmd);
   return std::system(cmd.c_str()) == 0;
 }
 
@@ -61,7 +62,7 @@ bool upload_file_to_fs(const std::string& local_path, const std::string& dest_pa
   std::string mkdirCmd = std::string("mkdir -p '") + dst.substr(0, dst.find_last_of('/')) + "'";
   std::system(mkdirCmd.c_str());
   std::string cmd = std::string("cp -f -- '") + local_path + "' '" + dst + "'";
-  std::cerr << "[worker] cp upload: " << cmd << std::endl;
+  log_msg(std::string("cp upload: ") + cmd);
   return std::system(cmd.c_str()) == 0;
 }
 

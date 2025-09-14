@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
+#include "gridmr/worker/common/logger.h"
 
 namespace gridmr_worker {
 
@@ -20,10 +21,10 @@ bool ensure_reducer_binary(const std::string& binary_uri, std::string& out_path)
     if (!download_url_to_file(binary_uri, src)) return false;
     std::string bin = "/tmp/reduce_bin";
     std::string cmd = std::string("g++ -O2 -std=c++17 -static -static-libstdc++ -o ") + bin + " " + src;
-    std::cerr << "[worker] compiling reducer: " << cmd << std::endl;
+  log_msg(std::string("compiling reducer: ") + cmd);
     if (std::system(cmd.c_str()) != 0){
       cmd = std::string("g++ -O2 -std=c++17 -o ") + bin + " " + src;
-      std::cerr << "[worker] static link failed, retry dynamic: " << cmd << std::endl;
+  log_msg(std::string("static link failed, retry dynamic: ") + cmd);
       if (std::system(cmd.c_str()) != 0) return false;
     }
     std::string chmodcmd = std::string("chmod +x ") + bin;
@@ -42,9 +43,9 @@ bool ensure_reducer_binary(const std::string& binary_uri, std::string& out_path)
 
 static std::string run_reducer_and_capture(const std::string& reducer, const std::string& input_path){
   std::string cmd = reducer + std::string(" < ") + input_path;
-  std::cerr << "[worker] REDUCE exec: " << cmd << std::endl;
+  log_msg(std::string("REDUCE exec: ") + cmd);
   FILE* pipe = popen(cmd.c_str(), "r");
-  if (!pipe) { std::cerr << "[worker] Failed to run reducer" << std::endl; return {}; }
+  if (!pipe) { log_msg("Failed to run reducer"); return {}; }
   std::ostringstream out;
   char buf[4096];
   while (fgets(buf, sizeof(buf), pipe)) out << buf;
@@ -85,7 +86,7 @@ std::string do_reduce_collect_output(const std::string& binary_uri, int split_co
   std::string mkdirCmd = std::string("mkdir -p '") + root + "/results/" + job_id + "'";
   std::system(mkdirCmd.c_str());
   if (!upload_file_to_fs(outLocal, dest)) {
-    std::cerr << "[worker] reduce output copy failed: " << dest << std::endl;
+    log_msg(std::string("reduce output copy failed: ") + dest);
     return "";
   }
   return dest;

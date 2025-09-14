@@ -12,6 +12,7 @@
 
 #include "gridmr/worker/common/env.h"
 #include "gridmr/worker/common/fs.h"
+#include "gridmr/worker/common/logger.h"
 #include "gridmr/worker/mapreduce/mapper.h"
 #include "gridmr/worker/mapreduce/reducer.h"
 
@@ -51,9 +52,16 @@ class WorkerClient {
     * cpu
     */
 
+    log_init();
     WorkerToMaster hello;
     WorkerInfo* info = hello.mutable_info();
-    info->set_worker_id(envOr("HOSTNAME", "worker-1"));
+        std::string wid;
+        {
+            const char* env_wid = std::getenv("WORKER_ID");
+            if (env_wid && *env_wid) wid = std::string(env_wid);
+            else wid = envOr("HOSTNAME", "worker-1");
+        }
+    info->set_worker_id(wid);
     info->set_host(envOr("HOSTNAME", "worker"));
     info->set_cpu(1);
     { std::lock_guard<std::mutex> lk(write_mu); stream->Write(hello); }
@@ -83,7 +91,7 @@ class WorkerClient {
 
             // Mensaje tipo AssignTask (definido en el proto)
             const AssignTask& t = msg.assign();
-            std::cout << "[worker] Received task " << t.task_id() << " type=" << t.type() << std::endl;
+            log_msg(std::string("Received task ") + t.task_id() + " type=" + std::to_string(t.type()));
 
             // Si la tarea es MAP y tiene splits
             if (t.type() == AssignTask::MAP && t.split_uris_size() > 0) {
@@ -122,6 +130,7 @@ class WorkerClient {
                 st->set_progress(100);
                 st->set_message("done");
                 { std::lock_guard<std::mutex> lk(write_mu); stream->Write(statusMsg); }
+                log_msg(std::string("Completed MAP task ") + t.task_id());
             }
 
             // En el caso de que la tarea sea REDUCE
@@ -143,6 +152,7 @@ class WorkerClient {
                 st->set_progress(100);
                 st->set_message(resultUri.empty()?"reduce_upload_failed":std::string("result_uri=")+resultUri);
                 { std::lock_guard<std::mutex> lk(write_mu); stream->Write(statusMsg); }
+                log_msg(std::string("Completed REDUCE task ") + t.task_id());
             }
         }
     }
@@ -151,7 +161,7 @@ class WorkerClient {
     running.store(false);
     if (hb.joinable()) hb.join();
     Status s = stream->Finish();
-    if (!s.ok()) std::cerr << "Stream finished with error: " << s.error_message() << std::endl;
+    if (!s.ok()) log_msg(std::string("Stream finished with error: ") + s.error_message());
   }
 
  private:
@@ -172,7 +182,7 @@ int main(){
         auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(5);
         if (channel->WaitForConnected(deadline)) break;
         attempts++;
-        std::cerr << "[worker] Waiting for master at " << target << " (attempt " << attempts << ")...\n";
+    log_msg(std::string("Waiting for master at ") + target + " (attempt " + std::to_string(attempts) + ")...");
         std::this_thread::sleep_for(std::chrono::seconds(std::min(5, attempts)));
     }
 

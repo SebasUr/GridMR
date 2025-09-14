@@ -7,6 +7,7 @@
 #include <vector>
 #include <functional>
 #include <cstdlib>
+#include "gridmr/worker/common/logger.h"
 
 namespace gridmr_worker {
 
@@ -21,10 +22,10 @@ bool ensure_mapper_binary(const std::string& binary_uri, std::string& out_path){
     if (!download_url_to_file(binary_uri, src)) return false;
     std::string bin = "/tmp/map_bin";
     std::string cmd = std::string("g++ -O2 -std=c++17 -static -static-libstdc++ -o ") + bin + " " + src;
-    std::cerr << "[worker] compiling mapper: " << cmd << std::endl;
+  log_msg(std::string("compiling mapper: ") + cmd);
     if (std::system(cmd.c_str()) != 0){
       cmd = std::string("g++ -O2 -std=c++17 -o ") + bin + " " + src;
-      std::cerr << "[worker] static link failed, retry dynamic: " << cmd << std::endl;
+  log_msg(std::string("static link failed, retry dynamic: ") + cmd);
       if (std::system(cmd.c_str()) != 0) return false;
     }
     std::string chmodcmd = std::string("chmod +x ") + bin;
@@ -44,7 +45,7 @@ bool ensure_mapper_binary(const std::string& binary_uri, std::string& out_path){
 void do_map(const std::string& uri, const std::string& binary_uri, int /*reducer_id*/, int n_reducers) {
   std::string input_path = "/tmp/map_input.txt";
   if (!download_url_to_file(uri, input_path)){
-    std::cerr << "[worker] input copy failed, trying SHARED_DATA_ROOT for: " << uri << std::endl;
+  log_msg(std::string("input copy failed, trying SHARED_DATA_ROOT for: ") + uri);
     std::string prefix = envOr("SHARED_DATA_ROOT", "/shared");
     auto pos = uri.find_last_of('/');
     std::string file = (pos == std::string::npos) ? uri : uri.substr(pos + 1);
@@ -69,9 +70,9 @@ void do_map(const std::string& uri, const std::string& binary_uri, int /*reducer
   std::string downloaded;
   if (!binary_uri.empty() && ensure_mapper_binary(binary_uri, downloaded)) mapper = downloaded;
   std::string cmd = mapper + std::string(" < ") + input_path;
-  std::cerr << "[worker] MAP exec: " << cmd << std::endl;
+  log_msg(std::string("MAP exec: ") + cmd);
   FILE* pipe = popen(cmd.c_str(), "r");
-  if (!pipe) { std::cerr << "[worker] Failed to run mapper" << std::endl; return; }
+  if (!pipe) { log_msg("Failed to run mapper"); return; }
 
   int R = std::max(1, n_reducers);
   std::vector<size_t> counts(R, 0);
