@@ -63,15 +63,18 @@ class WorkerClient {
     log_init();
     WorkerToMaster hello;
     WorkerInfo* info = hello.mutable_info();
-        std::string wid;
-        {
-            const char* env_wid = std::getenv("WORKER_ID");
-            if (env_wid && *env_wid) wid = std::string(env_wid);
-            else wid = envOr("HOSTNAME", "worker-1");
-        }
+    std::string wid;
+    {
+        const char* env_wid = std::getenv("WORKER_ID");
+        if (env_wid && *env_wid) wid = std::string(env_wid);
+        else wid = envOr("HOSTNAME", "worker-1");
+    }
+    log_set_worker_id(wid);
+    std::string host = envOr("HOSTNAME", "worker");
     info->set_worker_id(wid);
-    info->set_host(envOr("HOSTNAME", "worker"));
+    info->set_host(host);
     info->set_cpu(1);
+    log_msg(std::string("INFO sent: worker_id=") + wid + " host=" + host + " cpu=1");
     { std::lock_guard<std::mutex> lk(write_mu); stream->Write(hello); }
 
     // Hilo de heartbeats periódicos para evitar expiración por falta de latidos
@@ -80,11 +83,14 @@ class WorkerClient {
         WorkerToMaster hbmsg;
         auto* hb = hbmsg.mutable_heartbeat();
         hb->set_worker_id(wid); // usar el mismo worker_id que en INFO
-        hb->set_cpu_usage(get_cpu_usage());
-        hb->set_ram_usage(get_ram_usage());
+        float cpu = get_cpu_usage();
+        float ram = get_ram_usage();
+        hb->set_cpu_usage(cpu);
+        hb->set_ram_usage(ram);
         auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         hb->set_timestamp(static_cast<long long>(now_ms));
+        log_msg(std::string("HB sent: cpu=") + std::to_string(cpu) + "% ram=" + std::to_string(ram) + "% ts=" + std::to_string(now_ms));
         { std::lock_guard<std::mutex> lk(write_mu); stream->Write(hbmsg); }
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
       }

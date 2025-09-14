@@ -396,8 +396,32 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     }
 
     private void tryAssignAll() {
-        for (String wid : new ArrayList<>(clients.keySet())) {
-            tryAssign(wid);
+        // Ordena workers libres por menor carga (CPU/RAM) y reparte hasta agotar la cola
+        List<String> ordered = state.freeWorkersOrdered();
+        for (String wid : ordered) {
+            if (!state.hasPending()) break;
+            if (state.isBusy(wid)) continue; // por seguridad
+            AssignTask t = state.pollNext();
+            if (t == null) break;
+            StreamObserver<MasterToWorker> obs = clients.get(wid);
+            if (obs == null) {
+                // No hay stream activo; devolver la tarea a la cola
+                state.submitTasks(List.of(t));
+                continue;
+            }
+            state.markAssigned(wid, t);
+            inFlight.put(wid, t);
+            MasterToWorker out = MasterToWorker.newBuilder().setAssign(t).build();
+            try {
+                obs.onNext(out);
+                System.out.printf("Assigned %s to %s (type=%s splits=%d)%n",
+                        t.getTaskId(), wid, t.getType(), t.getSplitUrisCount());
+            } catch (Exception e) {
+                // Si falla el envío, liberar el worker y reencolar la tarea
+                inFlight.remove(wid);
+                state.markFinished(wid);
+                state.submitTasks(List.of(t));
+            }
         }
     }
 
