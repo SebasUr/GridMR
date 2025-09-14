@@ -234,7 +234,7 @@ resource "aws_efs_file_system" "gridmr" {
 
 resource "aws_efs_mount_target" "gridmr_mt" {
   file_system_id  = aws_efs_file_system.gridmr.id
-  subnet_id       = aws_subnet.private_a1.id # o public_a, elige una
+  subnet_id       = aws_subnet.private_a1.id
   security_groups = [aws_security_group.efs_sg.id]
 
   lifecycle {
@@ -270,7 +270,7 @@ resource "aws_instance" "master" {
               systemctl restart remote-fs.target || true
               sudo chown ubuntu:ubuntu /shared
               sudo chmod 777 /shared
-              git clone https://github.com/SebasUr/GridMR.git && cd GridMR && git switch dev && git switch feature/fsmigrate && cd deployment/scripts && sudo ./master.sh
+              git clone https://github.com/SebasUr/GridMR.git && cd GridMR && git switch feature/fsmigrate && cd deployment/scripts && sudo ./master.sh
               EOF
 
   tags = {
