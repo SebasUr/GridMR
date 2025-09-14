@@ -32,6 +32,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         String mapBinUri = "";
         String reduceBinUri = "";
         final Map<Integer, BitSet> mapParts = new ConcurrentHashMap<>(); // mapId -> parts bitset
+    final BitSet reducersDone = new BitSet(); // reducers completados por id
         volatile boolean mapsEnqueued = false;
         long createdAtMs = System.currentTimeMillis();
         int minWorkersToStart;
@@ -252,11 +253,21 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                             if (jid != null) {
                                 JobContext ctx = jobs.get(jid);
                                 if (ctx != null) {
-                                    maybeConcatenateFinalFor(jid, ctx);
-                                    if (!ctx.finalConcatenated) {
-                                        hbMonitor.schedule(() -> {
-                                            try { maybeConcatenateFinalFor(jid, ctx); } catch (Exception ignored) {}
-                                        }, 1, TimeUnit.SECONDS);
+                                    // Marca reducer terminado y si ya terminaron todos, concatena
+                                    try {
+                                        int rid = Integer.parseInt(st.getTaskId().substring("reduce-".length()));
+                                        synchronized (ControlServiceImpl.this) { ctx.reducersDone.set(rid); }
+                                    } catch (Exception ignore) {}
+                                    if (ctx.reducersDone.cardinality() >= ctx.nReducers) {
+                                        // Intento inmediato
+                                        maybeConcatenateFinalFor(jid, ctx);
+                                        // Y 2 reintentos simples por si faltara visibilidad de archivos en NFS
+                                        for (int i = 1; i <= 2; i++) {
+                                            int delay = i * 1000;
+                                            hbMonitor.schedule(() -> {
+                                                try { maybeConcatenateFinalFor(jid, ctx); } catch (Exception ignored) {}
+                                            }, delay, TimeUnit.MILLISECONDS);
+                                        }
                                     }
                                 }
                             }
