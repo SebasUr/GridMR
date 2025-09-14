@@ -8,7 +8,6 @@ import io.grpc.Server;
 import io.grpc.ServerBuilder;
 
 import java.io.IOException;
-import java.util.UUID;
 
 /**
  * Minimal gRPC Master that wires the ControlService and delegates task scheduling.
@@ -24,7 +23,7 @@ public class MasterServer {
     }
 
     public void start() throws IOException {
-    SchedulerState state = new SchedulerState(UUID.randomUUID().toString());
+    SchedulerState state = new SchedulerState();
     ControlServiceImpl control = new ControlServiceImpl(state);
     server = ServerBuilder.forPort(port)
         .addService(control)

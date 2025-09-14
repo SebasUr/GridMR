@@ -20,29 +20,34 @@ import java.util.concurrent.*; // <-- añadido para ScheduledExecutorService
  * - Recibe estados (STATUS) y partes generadas (PART).
  */
 public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBase {
-
-    // --- NUEVO: guarda grupos cuando se activa particionamiento agrupado ---
-    private List<List<String>> groupedMapInputs = Collections.emptyList();
+    // Per-job context to support multiple concurrent jobs
+    private static final class JobContext {
+        final String jobId;
+        final List<String> mapInputSplits = new ArrayList<>();
+        final AtomicInteger mapsCompleted = new AtomicInteger(0);
+        volatile boolean reducersScheduled = false;
+        volatile boolean finalConcatenated = false;
+        int totalMaps = 0;
+        int nReducers = 1;
+        String mapBinUri = "";
+        String reduceBinUri = "";
+        final Map<Integer, BitSet> mapParts = new ConcurrentHashMap<>(); // mapId -> parts bitset
+        volatile boolean mapsEnqueued = false;
+        long createdAtMs = System.currentTimeMillis();
+        int minWorkersToStart;
+        long startDelayMs;
+        JobContext(String jobId, int minWorkersToStart, long startDelayMs){
+            this.jobId = jobId; this.minWorkersToStart = minWorkersToStart; this.startDelayMs = startDelayMs;
+        }
+    }
 
     private final SchedulerState state;
 
     // workerId -> stream para enviar MasterToWorker
     private final Map<String, StreamObserver<MasterToWorker>> clients = new ConcurrentHashMap<>();
 
-    // Controles de job / tareas
-    private final List<String> mapInputSplits = new ArrayList<>();
-    // mapIdGen eliminado (no se usaba)
-    private final AtomicInteger mapsCompleted = new AtomicInteger(0);
-    private int totalMaps = 0;
-    private volatile boolean reducersScheduled = false;
-    private int nReducers = 1;
-    private String currentJobId = null; // set on submit
-    private String mapBinUri = "";
-    private String reduceBinUri = "";
-    private volatile boolean finalConcatenated = false;
-
-    // mapId -> bitset de reducers recibidos (particiones intermedias)
-    private final Map<Integer, BitSet> mapParts = new ConcurrentHashMap<>();
+    // All jobs by id
+    private final Map<String, JobContext> jobs = new ConcurrentHashMap<>();
 
     // === NUEVO: tracking de heartbeats y tareas en vuelo ===
     private final Map<String, Long> workerLastHeartbeat = new ConcurrentHashMap<>();
@@ -57,11 +62,9 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     private final long hbCheckPeriodMs = Long.parseLong(Env.getEnvOrDefault("HEARTBEAT_CHECK_PERIOD_MS", "3000"));
     private final long hbWarnStaleMs = Long.parseLong(Env.getEnvOrDefault("HEARTBEAT_LOG_STALE_MS", "5000"));
 
-    // Optional start gating: wait for N workers and/or a delay before enqueuing MAP tasks
-    private int minWorkersToStart = Integer.parseInt(Env.getEnvOrDefault("MR_MIN_WORKERS", "3"));
-    private long startDelayMs = Long.parseLong(Env.getEnvOrDefault("MR_START_DELAY_MS", "0"));
-    private long createdAtMs = System.currentTimeMillis();
-    private volatile boolean mapsEnqueued = false;
+    // Defaults for new jobs
+    private int defaultMinWorkersToStart = Integer.parseInt(Env.getEnvOrDefault("MR_MIN_WORKERS", "3"));
+    private long defaultStartDelayMs = Long.parseLong(Env.getEnvOrDefault("MR_START_DELAY_MS", "0"));
 
     public ControlServiceImpl(SchedulerState state) {
         this.state = state;
@@ -103,73 +106,40 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             }
         }
 
-        // Reset per-job state
-        mapsEnqueued = false;
-        reducersScheduled = false;
-        finalConcatenated = false;
-        mapParts.clear();
-        inFlight.clear();
-        mapsCompleted.set(0);
-
-        // Build splits: simple behavior, one URI per MAP task
-        groupedMapInputs = Collections.emptyList();
-        mapInputSplits.clear();
-        mapInputSplits.addAll(cleanedInputs);
-        totalMaps = mapInputSplits.size();
-        System.out.println("Initialized MAP splits: " + totalMaps + " (simple)");
+    // Create context for this new job
+    String jobId = java.util.UUID.randomUUID().toString();
+    int mw = (minWorkers != null && minWorkers > 0) ? minWorkers : defaultMinWorkersToStart;
+    long sd = (startDelayMsOverride != null && startDelayMsOverride >= 0) ? startDelayMsOverride : defaultStartDelayMs;
+    JobContext ctx = new JobContext(jobId, mw, sd);
+    ctx.nReducers = (nReducers == null || nReducers <= 0) ? 1 : nReducers;
+    ctx.mapBinUri = (mapBin == null ? "" : mapBin);
+    ctx.reduceBinUri = (reduceBin == null ? "" : reduceBin);
+    ctx.mapInputSplits.addAll(cleanedInputs);
+    ctx.totalMaps = ctx.mapInputSplits.size();
+    jobs.put(jobId, ctx);
+    System.out.println("Initialized MAP splits: " + ctx.totalMaps + " (simple) for job " + jobId);
 
         // Set config
-        this.nReducers = (nReducers == null || nReducers <= 0) ? 1 : nReducers;
-        this.mapBinUri = mapBin == null ? "" : mapBin;
-        this.reduceBinUri = reduceBin == null ? "" : reduceBin;
-        if (minWorkers != null && minWorkers > 0) this.minWorkersToStart = minWorkers;
-        if (startDelayMsOverride != null && startDelayMsOverride >= 0) this.startDelayMs = startDelayMsOverride;
-        this.createdAtMs = System.currentTimeMillis();
-        this.currentJobId = java.util.UUID.randomUUID().toString();
-
-        maybeStartJobIfReady();
-        return this.currentJobId;
+    maybeStartJobsIfReady();
+    return jobId;
     }
 
     /* Construye las tareas MAP iniciales y las encola */
-    private void buildAndEnqueueMapTasks() {
-        if (currentJobId == null) return; // no job submitted
-
+    private void buildAndEnqueueMapTasks(String jobId, JobContext ctx) {
         List<AssignTask> tasks = new ArrayList<>();
-
-        if (!groupedMapInputs.isEmpty()) {
-            // Modo agrupado: cada grupo -> una tarea con múltiples split_uris
-            for (int i = 0; i < groupedMapInputs.size(); i++) {
-                List<String> group = groupedMapInputs.get(i);
-        AssignTask.Builder b = AssignTask.newBuilder()
-            .setTaskId("map-" + i)
-            .setJobId(currentJobId)
-                        .setType(AssignTask.TaskType.MAP)
-                        .setReducerId(0)
-                        .setNReducers(this.nReducers);
-                for (String uri : group) {
-                    b.addSplitUris(uri);
-                }
-                if (!this.mapBinUri.isEmpty()) b.setBinaryUri(this.mapBinUri);
-                tasks.add(b.build());
-            }
-        } else {
-            // Comportamiento simple original: una URI por tarea
-            for (int i = 0; i < mapInputSplits.size(); i++) {
-                AssignTask.Builder b = AssignTask.newBuilder()
-            .setTaskId("map-" + i)
-            .setJobId(currentJobId)
-                        .setType(AssignTask.TaskType.MAP)
-                        .addSplitUris(mapInputSplits.get(i))
-                        .setReducerId(0)
-                        .setNReducers(this.nReducers);
-        if (!this.mapBinUri.isEmpty()) b.setBinaryUri(this.mapBinUri);
-                tasks.add(b.build());
-            }
+        for (int i = 0; i < ctx.mapInputSplits.size(); i++) {
+            AssignTask.Builder b = AssignTask.newBuilder()
+                    .setTaskId("map-" + i)
+                    .setJobId(jobId)
+                    .setType(AssignTask.TaskType.MAP)
+                    .addSplitUris(ctx.mapInputSplits.get(i))
+                    .setReducerId(0)
+                    .setNReducers(ctx.nReducers);
+            if (!ctx.mapBinUri.isEmpty()) b.setBinaryUri(ctx.mapBinUri);
+            tasks.add(b.build());
         }
-
         state.submitTasks(tasks);
-        System.out.println("Enqueued " + tasks.size() + " MAP tasks.");
+        System.out.println("Enqueued " + tasks.size() + " MAP tasks for job " + jobId);
     }
 
     @Override
@@ -240,7 +210,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 state.updateHeartbeat(synthetic);
                 workerLastHeartbeat.put(workerId, synthetic.getTimestamp());
                 System.out.println("Worker connected: " + workerId + " cpu=" + info.getCpu());
-                maybeStartJobIfReady();
+                maybeStartJobsIfReady();
                 tryAssign(workerId); // asignar inmediatamente
             }
 
@@ -267,19 +237,28 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 switch (st.getState()) {
                     case COMPLETED:
                         state.markFinished(workerId);
-                        inFlight.remove(workerId);
+                        AssignTask done = inFlight.remove(workerId);
+                        String jid = (done != null ? done.getJobId() : null);
                         if (st.getTaskId().startsWith("map-")) {
-                            int done = mapsCompleted.incrementAndGet();
-                            System.out.println("MAP completed: " + done + "/" + totalMaps);
-                            maybeScheduleReducers();
+                            if (jid != null) {
+                                JobContext ctx = jobs.get(jid);
+                                if (ctx != null) {
+                                    int d = ctx.mapsCompleted.incrementAndGet();
+                                    System.out.println("MAP completed: " + d + "/" + ctx.totalMaps + " for job " + jid);
+                                    maybeScheduleReducers(jid, ctx);
+                                }
+                            }
                         } else if (st.getTaskId().startsWith("reduce-")) {
-                            // Attempt concatenation for the current job id snapshot; schedule a short delayed retry
-                            final String jid = currentJobId;
-                            maybeConcatenateFinalFor(jid);
-                            if (!finalConcatenated) {
-                                hbMonitor.schedule(() -> {
-                                    try { maybeConcatenateFinalFor(jid); } catch (Exception ignored) {}
-                                }, 1, TimeUnit.SECONDS);
+                            if (jid != null) {
+                                JobContext ctx = jobs.get(jid);
+                                if (ctx != null) {
+                                    maybeConcatenateFinalFor(jid, ctx);
+                                    if (!ctx.finalConcatenated) {
+                                        hbMonitor.schedule(() -> {
+                                            try { maybeConcatenateFinalFor(jid, ctx); } catch (Exception ignored) {}
+                                        }, 1, TimeUnit.SECONDS);
+                                    }
+                                }
                             }
                         }
                         tryAssign(workerId);
@@ -288,17 +267,22 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                         state.markFinished(workerId);
                         AssignTask original = inFlight.remove(workerId);
                         if (original == null && st.getTaskId().startsWith("map-")) {
-                            // reconstrucción simple
-                            int idx = Integer.parseInt(st.getTaskId().substring("map-".length()));
-                            if (idx >= 0 && idx < mapInputSplits.size()) {
-                                AssignTask.Builder b = AssignTask.newBuilder()
-                                        .setTaskId("map-" + idx)
-                                        .setJobId(currentJobId)
-                                        .setType(AssignTask.TaskType.MAP)
-                                        .addSplitUris(mapInputSplits.get(idx))
-                                        .setReducerId(0)
-                                        .setNReducers(nReducers);
-                                original = b.build();
+                            // reconstrucción simple (buscar por cada job el índice)
+                            for (Map.Entry<String, JobContext> e : jobs.entrySet()) {
+                                JobContext ctx = e.getValue();
+                                int idx;
+                                try { idx = Integer.parseInt(st.getTaskId().substring("map-".length())); } catch (Exception ex) { idx = -1; }
+                                if (idx >= 0 && idx < ctx.mapInputSplits.size()) {
+                                    AssignTask.Builder b = AssignTask.newBuilder()
+                                            .setTaskId("map-" + idx)
+                                            .setJobId(ctx.jobId)
+                                            .setType(AssignTask.TaskType.MAP)
+                                            .addSplitUris(ctx.mapInputSplits.get(idx))
+                                            .setReducerId(0)
+                                            .setNReducers(ctx.nReducers);
+                                    original = b.build();
+                                    break;
+                                }
                             }
                         }
                         requeue(original, "status-failed");
@@ -312,8 +296,11 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             private void handlePart(PartUploaded p) {
                 System.out.printf("Part uploaded job=%s map=%d part=%d uri=%s%n",
                         p.getJobId(), p.getMapId(), p.getPartitionId(), p.getUri());
-                mapParts.computeIfAbsent(p.getMapId(), k -> new BitSet(nReducers)).set(p.getPartitionId());
-                maybeScheduleReducers();
+                JobContext ctx = jobs.get(p.getJobId());
+                if (ctx != null) {
+                    ctx.mapParts.computeIfAbsent(p.getMapId(), k -> new BitSet(ctx.nReducers)).set(p.getPartitionId());
+                    maybeScheduleReducers(p.getJobId(), ctx);
+                }
             }
 
             private void cleanupWorker(String wid) {
@@ -328,39 +315,39 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             // Reemplazado por nueva versión con validación de partes
 
             // Sobrecarga: primero validar que todos los MAP completos y todas las partes subidas
-            private synchronized void maybeScheduleReducers() {
-                if (reducersScheduled) return;
-                if (mapsCompleted.get() < totalMaps) return; // aún faltan MAPs
+            private synchronized void maybeScheduleReducers(String jobId, JobContext ctx) {
+                if (ctx.reducersScheduled) return;
+                if (ctx.mapsCompleted.get() < ctx.totalMaps) return; // aún faltan MAPs
                 // Validar que cada mapa tiene todas las partes registradas
-                for (int mid = 0; mid < totalMaps; mid++) {
-                    BitSet bs = mapParts.get(mid);
-                    if (bs == null || bs.cardinality() < nReducers) {
+                for (int mid = 0; mid < ctx.totalMaps; mid++) {
+                    BitSet bs = ctx.mapParts.get(mid);
+                    if (bs == null || bs.cardinality() < ctx.nReducers) {
                         return; // aún faltan uploads
                     }
                 }
-                // Todos listos -> delegar al original (renombrado) para construir reducers
-                scheduleReducersInternal();
+                // Todos listos -> construir reducers de este job
+                scheduleReducersInternal(jobId, ctx);
             }
 
             // La lógica original de programación la movemos aquí
-            private synchronized void scheduleReducersInternal() {
-                if (reducersScheduled) return;
-                reducersScheduled = true;
-                int nReducersLocal = nReducers; // usar campo externo
-                String reduceBin = ControlServiceImpl.this.reduceBinUri;
-                System.out.println("[Reducers] All MAP parts uploaded; scheduling " + nReducersLocal + " REDUCE tasks...");
+            private synchronized void scheduleReducersInternal(String jobId, JobContext ctx) {
+                if (ctx.reducersScheduled) return;
+                ctx.reducersScheduled = true;
+                int nReducersLocal = ctx.nReducers;
+                String reduceBin = ctx.reduceBinUri;
+                System.out.println("[Reducers] All MAP parts uploaded; scheduling " + nReducersLocal + " REDUCE tasks for job " + jobId + "...");
                 String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
                 List<AssignTask> reducers = new ArrayList<>();
                 for (int r = 0; r < nReducersLocal; r++) {
                     AssignTask.Builder rb = AssignTask.newBuilder()
                             .setTaskId("reduce-" + r)
-                            .setJobId(currentJobId)
+                            .setJobId(jobId)
                             .setType(AssignTask.TaskType.REDUCE)
                             .setReducerId(r)
                             .setNReducers(nReducersLocal);
                     if (!reduceBin.isEmpty()) rb.setBinaryUri(reduceBin);
-                    for (int mid = 0; mid < totalMaps; mid++) {
-                        String uri = sharedRoot + "/intermediate/" + currentJobId
+                    for (int mid = 0; mid < ctx.totalMaps; mid++) {
+                        String uri = sharedRoot + "/intermediate/" + jobId
                                 + "/part-" + r + "-map-" + mid + ".txt";
                         rb.addSplitUris(uri);
                     }
@@ -403,9 +390,9 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
     }
 
-    // When all reducers complete, concatenate part-*.txt into final.txt for given jobId
-    private synchronized void maybeConcatenateFinalFor(String jobId) {
-        if (!reducersScheduled || finalConcatenated) return;
+    // When all reducers complete, concatenate part-*.txt into final.txt for given job
+    private synchronized void maybeConcatenateFinalFor(String jobId, JobContext ctx) {
+        if (!ctx.reducersScheduled || ctx.finalConcatenated) return;
         // Count reducers done by probing results existence
     String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
     String jobRoot = sharedRoot + "/results/" + jobId;
@@ -414,7 +401,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             if (!java.nio.file.Files.isDirectory(jobDir)) return;
             // We expect part-0.txt .. part-(nReducers-1).txt
             List<java.nio.file.Path> parts = new ArrayList<>();
-            for (int i = 0; i < nReducers; i++) {
+            for (int i = 0; i < ctx.nReducers; i++) {
                 java.nio.file.Path p = jobDir.resolve("part-" + i + ".txt");
                 if (!java.nio.file.Files.exists(p)) return; // not yet
                 parts.add(p);
@@ -432,7 +419,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                     }
                 }
             }
-            finalConcatenated = true;
+            ctx.finalConcatenated = true;
             System.out.println("[Final] Concatenated results into: " + finalOut);
         } catch (Exception e) {
             System.err.println("[Final] Concatenation error: " + e.getMessage());
@@ -461,20 +448,22 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 System.out.println("[HB] WARN worker " + wid + " heartbeat stale=" + delta + "ms");
             }
         }
-        maybeStartJobIfReady();
+    maybeStartJobsIfReady();
         tryAssignAll();
     }
 
     // Encola MAPs cuando: no encolados aún, alcanzado delay opcional y número mínimo de workers conectados
-    private synchronized void maybeStartJobIfReady() {
-    if (currentJobId == null || mapsEnqueued) return;
+    private synchronized void maybeStartJobsIfReady() {
         long now = System.currentTimeMillis();
         int connected = clients.size();
-        boolean delayOk = (now - createdAtMs) >= startDelayMs;
-        boolean workersOk = connected >= minWorkersToStart;
-        if (delayOk && workersOk) {
-            buildAndEnqueueMapTasks();
-            mapsEnqueued = true;
+        for (JobContext ctx : jobs.values()) {
+            if (ctx.mapsEnqueued) continue;
+            boolean delayOk = (now - ctx.createdAtMs) >= ctx.startDelayMs;
+            boolean workersOk = connected >= ctx.minWorkersToStart;
+            if (delayOk && workersOk) {
+                buildAndEnqueueMapTasks(ctx.jobId, ctx);
+                ctx.mapsEnqueued = true;
+            }
         }
     }
 

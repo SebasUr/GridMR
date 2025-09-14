@@ -8,7 +8,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SchedulerState {
-    private final String jobId;
     private final WorkerManager workerManager = new WorkerManager();
     private final TaskQueue taskQueue = new TaskQueue();
     private final Scheduler scheduler = new Scheduler(workerManager);
@@ -16,11 +15,7 @@ public class SchedulerState {
     // workerId -> tarea en ejecución
     private final Map<String, AssignTask> running = new ConcurrentHashMap<>();
 
-    public SchedulerState(String jobId) {
-        this.jobId = jobId;
-    }
-
-    public String getJobId() { return jobId; }
+    public SchedulerState() {}
 
     public void updateHeartbeat(Heartbeat hb) {
         workerManager.update(hb);
