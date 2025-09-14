@@ -23,21 +23,21 @@ public class MasterServer {
     }
 
     public void start() throws IOException {
-    SchedulerState state = new SchedulerState();
-    ControlServiceImpl control = new ControlServiceImpl(state);
-    server = ServerBuilder.forPort(port)
-        .addService(control)
+        SchedulerState state = new SchedulerState();
+        ControlServiceImpl control = new ControlServiceImpl(state);
+        server = ServerBuilder.forPort(port)
+                .addService(control)
                 .build()
                 .start();
         System.out.println("Master gRPC server started on port " + port);
-    int httpPort = Integer.parseInt(Env.getEnvOrDefault("MASTER_HTTP_PORT", "8080"));
-    http = new HttpJobServer(control, httpPort);
-    http.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.err.println("Shutting down master...");
-            MasterServer.this.stop();
-            System.err.println("Master shut down.");
-        }));
+        int httpPort = Integer.parseInt(Env.getEnvOrDefault("MASTER_HTTP_PORT", "8080"));
+        http = new HttpJobServer(control, httpPort);
+        http.start();
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.err.println("Shutting down master...");
+                MasterServer.this.stop();
+                System.err.println("Master shut down.");
+            }));
     }
 
     public void stop() {

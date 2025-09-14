@@ -1,0 +1,276 @@
+{
+  "version": 4,
+  "terraform_version": "1.12.2",
+  "serial": 781,
+  "lineage": "40359a03-e3c7-c6ea-82ec-3b9a477c8eac",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_efs_file_system",
+      "name": "gridmr",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:elasticfilesystem:us-east-1:471112974741:file-system/fs-0c532efea8b61465c",
+            "availability_zone_id": "",
+            "availability_zone_name": "",
+            "creation_token": "gridmr-efs",
+            "dns_name": "fs-0c532efea8b61465c.efs.us-east-1.amazonaws.com",
+            "encrypted": false,
+            "id": "fs-0c532efea8b61465c",
+            "kms_key_id": "",
+            "lifecycle_policy": [],
+            "number_of_mount_targets": 1,
+            "owner_id": "471112974741",
+            "performance_mode": "generalPurpose",
+            "provisioned_throughput_in_mibps": 0,
+            "size_in_bytes": [
+              {
+                "value": 6144,
+                "value_in_ia": 0,
+                "value_in_standard": 6144
+              }
+            ],
+            "tags": {
+              "Name": "TF_GridMR_EFS"
+            },
+            "tags_all": {
+              "Name": "TF_GridMR_EFS"
+            },
+            "throughput_mode": "bursting"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "efs_sg",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:471112974741:security-group/sg-09c252ae8b58ced22",
+            "description": "Allow NFS",
+            "egress": [
+              {
+                "cidr_blocks": [
+                  "0.0.0.0/0"
+                ],
+                "description": "",
+                "from_port": 0,
+                "ipv6_cidr_blocks": [],
+                "prefix_list_ids": [],
+                "protocol": "-1",
+                "security_groups": [],
+                "self": false,
+                "to_port": 0
+              }
+            ],
+            "id": "sg-09c252ae8b58ced22",
+            "ingress": [
+              {
+                "cidr_blocks": [
+                  "172.16.0.0/16"
+                ],
+                "description": "",
+                "from_port": 2049,
+                "ipv6_cidr_blocks": [],
+                "prefix_list_ids": [],
+                "protocol": "tcp",
+                "security_groups": [],
+                "self": false,
+                "to_port": 2049
+              }
+            ],
+            "name": "efs-sg",
+            "name_prefix": "",
+            "owner_id": "471112974741",
+            "revoke_rules_on_delete": false,
+            "tags": {
+              "Name": "TF_EFS_SG"
+            },
+            "tags_all": {
+              "Name": "TF_EFS_SG"
+            },
+            "timeouts": null,
+            "vpc_id": "vpc-0ec52c43e87794078"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo2MDAwMDAwMDAwMDAsImRlbGV0ZSI6OTAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIxIn0=",
+          "dependencies": [
+            "aws_vpc.gridmr_vpc"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "worker_sg",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:471112974741:security-group/sg-0d251c96182b64b34",
+            "description": "Allow internal",
+            "egress": [
+              {
+                "cidr_blocks": [
+                  "0.0.0.0/0"
+                ],
+                "description": "",
+                "from_port": 0,
+                "ipv6_cidr_blocks": [],
+                "prefix_list_ids": [],
+                "protocol": "-1",
+                "security_groups": [],
+                "self": false,
+                "to_port": 0
+              }
+            ],
+            "id": "sg-0d251c96182b64b34",
+            "ingress": [
+              {
+                "cidr_blocks": [
+                  "172.16.0.0/16"
+                ],
+                "description": "Internal",
+                "from_port": 0,
+                "ipv6_cidr_blocks": [],
+                "prefix_list_ids": [],
+                "protocol": "-1",
+                "security_groups": [],
+                "self": false,
+                "to_port": 0
+              }
+            ],
+            "name": "worker-sg",
+            "name_prefix": "",
+            "owner_id": "471112974741",
+            "revoke_rules_on_delete": false,
+            "tags": {
+              "Name": "TF_WorkerSG"
+            },
+            "tags_all": {
+              "Name": "TF_WorkerSG"
+            },
+            "timeouts": null,
+            "vpc_id": "vpc-0ec52c43e87794078"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo2MDAwMDAwMDAwMDAsImRlbGV0ZSI6OTAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIxIn0=",
+          "dependencies": [
+            "aws_vpc.gridmr_vpc"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_subnet",
+      "name": "private_a1",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:471112974741:subnet/subnet-04e142b66203495d3",
+            "assign_ipv6_address_on_creation": false,
+            "availability_zone": "us-east-1a",
+            "availability_zone_id": "use1-az4",
+            "cidr_block": "172.16.2.0/24",
+            "customer_owned_ipv4_pool": "",
+            "enable_dns64": false,
+            "enable_lni_at_device_index": 0,
+            "enable_resource_name_dns_a_record_on_launch": false,
+            "enable_resource_name_dns_aaaa_record_on_launch": false,
+            "id": "subnet-04e142b66203495d3",
+            "ipv6_cidr_block": "",
+            "ipv6_cidr_block_association_id": "",
+            "ipv6_native": false,
+            "map_customer_owned_ip_on_launch": false,
+            "map_public_ip_on_launch": false,
+            "outpost_arn": "",
+            "owner_id": "471112974741",
+            "private_dns_hostname_type_on_launch": "ip-name",
+            "tags": {
+              "Name": "TF_gridmr_vpc-subnet-private1-us-east-1a"
+            },
+            "tags_all": {
+              "Name": "TF_gridmr_vpc-subnet-private1-us-east-1a"
+            },
+            "timeouts": null,
+            "vpc_id": "vpc-0ec52c43e87794078"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo2MDAwMDAwMDAwMDAsImRlbGV0ZSI6MTIwMDAwMDAwMDAwMH0sInNjaGVtYV92ZXJzaW9uIjoiMSJ9",
+          "dependencies": [
+            "aws_vpc.gridmr_vpc"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "gridmr_vpc",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:471112974741:vpc/vpc-0ec52c43e87794078",
+            "assign_generated_ipv6_cidr_block": false,
+            "cidr_block": "172.16.0.0/16",
+            "default_network_acl_id": "acl-01ffcd6324254a812",
+            "default_route_table_id": "rtb-04a468d9cea0beafd",
+            "default_security_group_id": "sg-0d22845ca97253d5e",
+            "dhcp_options_id": "dopt-02ea92bc9dcb4d752",
+            "enable_classiclink": false,
+            "enable_classiclink_dns_support": false,
+            "enable_dns_hostnames": true,
+            "enable_dns_support": true,
+            "enable_network_address_usage_metrics": false,
+            "id": "vpc-0ec52c43e87794078",
+            "instance_tenancy": "default",
+            "ipv4_ipam_pool_id": null,
+            "ipv4_netmask_length": null,
+            "ipv6_association_id": "",
+            "ipv6_cidr_block": "",
+            "ipv6_cidr_block_network_border_group": "",
+            "ipv6_ipam_pool_id": "",
+            "ipv6_netmask_length": 0,
+            "main_route_table_id": "rtb-04a468d9cea0beafd",
+            "owner_id": "471112974741",
+            "tags": {
+              "Name": "TF_gridmr_vpc-vpc"
+            },
+            "tags_all": {
+              "Name": "TF_gridmr_vpc-vpc"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJzY2hlbWFfdmVyc2lvbiI6IjEifQ==",
+          "create_before_destroy": true
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}

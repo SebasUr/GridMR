@@ -6,6 +6,9 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <fstream>
+#include <string>
+#include <sstream>
 
 #include "gridmr.pb.h"
 #include "gridmr.grpc.pb.h"
@@ -13,6 +16,7 @@
 #include "gridmr/worker/common/env.h"
 #include "gridmr/worker/common/fs.h"
 #include "gridmr/worker/common/logger.h"
+#include "gridmr/worker/common/sysmetrics.h"
 #include "gridmr/worker/mapreduce/mapper.h"
 #include "gridmr/worker/mapreduce/reducer.h"
 
@@ -29,6 +33,10 @@ using gridmr::AssignTask;
 using gridmr::TaskStatus;
 
 using namespace gridmr_worker;
+
+// Use shared sysmetrics helpers
+static inline float get_cpu_usage() { return sys_cpu_usage_percent(); }
+static inline float get_ram_usage() { return sys_ram_usage_percent(); }
 
 class WorkerClient {
  public:
@@ -71,9 +79,9 @@ class WorkerClient {
       while (running.load()) {
         WorkerToMaster hbmsg;
         auto* hb = hbmsg.mutable_heartbeat();
-        hb->set_worker_id(envOr("HOSTNAME", "worker-1"));
-        hb->set_cpu_usage(0.0f);
-        hb->set_ram_usage(0.0f);
+        hb->set_worker_id(wid); // usar el mismo worker_id que en INFO
+        hb->set_cpu_usage(get_cpu_usage());
+        hb->set_ram_usage(get_ram_usage());
         auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         hb->set_timestamp(static_cast<long long>(now_ms));
