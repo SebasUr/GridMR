@@ -1,4 +1,4 @@
-#GridMR
+# GridMR
 
 GridMR is a university project developed for the Distributed Systems course. The main goal of this project is to design and implement a distributed computing platform capable of managing and executing tasks across multiple nodes.
 
@@ -337,6 +337,7 @@ End-to-end flow: split input, SCP artifacts, HTTP submit, map→reduce execution
 Job lifecycle states and transitions: PENDING → MAPPING → SHUFFLING → REDUCING → FINALIZING → DONE/FAILED.
 
 <img width="2184" height="3840" alt="mermaid-ai-diagram-2025-09-15-025551" src="https://github.com/user-attachments/assets/9c6699d9-7828-466e-8148-8aa486cbdfd0" />
+
 
 
 
