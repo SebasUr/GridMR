@@ -112,6 +112,37 @@ Location: `src/main/java/com/gridmr/master`
 	- Centralized configuration reader (env vars and defaults).
 
 ---
+### Scheduler and Worker Manager: Deep Dive
+
+This section documents how tasks are assigned, when reducers are scheduled, and how worker health impacts scheduling.
+
+- Core structures
+	- `TaskQueue` (FIFO): holds pending `AssignTask` items awaiting assignment.
+	- `WorkerManager`: keeps the latest `Heartbeat` per worker and orders workers by availability using a weighted score (CPU 70% + RAM 30%). Lower score = more available.
+	- `SchedulerState`: wraps `WorkerManager` and `TaskQueue`, tracks per-worker running tasks, and exposes atomic assignment helpers (e.g., `tryAssignNext`, `markAssigned`, `markFinished`).
+	- Control layer (`ControlServiceImpl`): maintains live gRPC streams, `inFlight` tasks (workerId → task), last heartbeat timestamps, and job contexts.
+
+- Assignment algorithm
+	- On worker connect (`INFO`) or on each `HEARTBEAT`, the master attempts assignment:
+		- Per-worker path: `tryAssign(workerId)` → `SchedulerState.tryAssignNext(workerId)` assigns next pending task if the worker is not busy.
+		- Bulk path: `tryAssignAll()` orders free workers by availability and drains the queue.
+	- Availability ordering: `WorkerManager.getWorkersByAvailability()` sorts by weighted CPU/RAM usage; `Scheduler` enforces thresholds `SCHED_MAX_CPU_PCT` and `SCHED_MAX_RAM_PCT` (defaults 90%).
+	- On initial connect a synthetic heartbeat with CPU=RAM=100 is registered so the worker won’t receive tasks until it sends a real heartbeat with current metrics.
+
+- Job lifecycle and phase transitions
+	- HTTP submit builds a JobContext: `jobId`, input split list, `nReducers`, map/reduce binaries, and start gates (`MR_MIN_WORKERS`, `MR_START_DELAY_MS`).
+	- Start gates: maps are enqueued only when enough workers are connected (≥ `MR_MIN_WORKERS`, default 3) and optional delay elapsed (`MR_START_DELAY_MS`, default 0ms).
+	- Map phase: one MAP task per input split is created and enqueued. On `STATUS COMPLETED map-*`, the job increments `mapsCompleted`.
+	- Intermediate tracking: workers send `PART` messages with uploaded partition info; the master tracks a `BitSet` per map to ensure all `nReducers` partitions exist.
+	- Reduce scheduling condition: reducers are scheduled only when ALL maps are completed AND every map has uploaded ALL partitions. Then one REDUCE task per reducer id is created. Each reducer receives URIs like `${SHARED_DATA_ROOT}/intermediate/${jobId}/part-<r>-map-<mapId>.txt`.
+	- Finalization: when all reducers report completed, the master concatenates `results/${jobId}/part-0.txt .. part-(nReducers-1).txt` into `results/${job_id}/final.txt`, with two short delayed retries (1s, 2s) to absorb eventual NFS visibility.
+
+- Heartbeats and fault tolerance
+	- Heartbeat monitor runs every `HEARTBEAT_CHECK_PERIOD_MS` (default 3000ms) and logs stale workers after `HEARTBEAT_LOG_STALE_MS` (5000ms).
+	- If no heartbeat arrives within `HEARTBEAT_TIMEOUT_MS` (default 15000ms), the worker is considered expired: its in-flight task is re-queued, the worker is removed from active clients, and its busy flag cleared.
+	- gRPC stream errors or completion trigger the same cleanup and requeue logic.
+
+---
 
 ## Worker Runtime (C++)
 
@@ -342,6 +373,7 @@ End-to-end flow: split input, SCP artifacts, HTTP submit, map→reduce execution
 Job lifecycle states and transitions: PENDING → MAPPING → SHUFFLING → REDUCING → FINALIZING → DONE/FAILED.
 
 <img width="2184" height="3840" alt="mermaid-ai-diagram-2025-09-15-025551" src="https://github.com/user-attachments/assets/9c6699d9-7828-466e-8148-8aa486cbdfd0" />
+
 
 
 
