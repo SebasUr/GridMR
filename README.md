@@ -1,4 +1,4 @@
-# GridMR
+![Diagramas Tópicos Telemática - Proyecto 1](https://github.com/user-attachments/assets/5e246a56-8553-4369-b8e3-3fda01a61e26)# GridMR
 
 GridMR is a university project developed for the Distributed Systems course. The main goal of this project is to design and implement a distributed computing platform capable of managing and executing tasks across multiple nodes.
 
@@ -49,7 +49,7 @@ This document explains the architecture, technologies, components, APIs, local d
 - `infra/`
 	- `docker-compose.yml`, `*/Dockerfile` – Local development and testing only
 - `deployment/`
-	- Terraform and shell scaffold for AWS (you will complete production details)
+	- Terraform and shell scaffold for AWS
 
 ---
 
@@ -320,9 +320,11 @@ Internal components of the Master service: HTTP server, gRPC control, Scheduler,
 ### 3) Deployment Diagram (AWS EC2 + EFS)
 Production-oriented layout with EC2 Master/Workers, EFS at /shared, subnets/AZs, and open ports.
 
-```mermaid
-%% Paste Deployment diagram here (or add an image below)
-```
+Testing Deployment
+<img width="1219" height="899" alt="image" src="https://github.com/user-attachments/assets/ea48dd4b-c0ef-4f27-8262-19b9c369af5f" />
+
+Production Deployment
+<img width="1103" height="805" alt="image" src="https://github.com/user-attachments/assets/5ff64b37-6da8-4d1d-9df5-7c45529d4606" />
 
 <!-- ![Deployment](docs/diagrams/deployment-aws.png) -->
 
@@ -335,4 +337,5 @@ End-to-end flow: split input, SCP artifacts, HTTP submit, map→reduce execution
 Job lifecycle states and transitions: PENDING → MAPPING → SHUFFLING → REDUCING → FINALIZING → DONE/FAILED.
 
 <img width="2184" height="3840" alt="mermaid-ai-diagram-2025-09-15-025551" src="https://github.com/user-attachments/assets/9c6699d9-7828-466e-8148-8aa486cbdfd0" />
+
 
