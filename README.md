@@ -157,7 +157,7 @@ cd tools
 python3 -m venv .venv && source .venv/bin/activate
 pip install requests python-dotenv
 
-python gridmr_submit.py ./my_map ./my_reduce ./input.txt 4
+python gridmr_submit.py ./my_map.{cc,cpp} ./my_reduce.{cc,cpp} ./input.txt 4
 
 # The client will:
 #   - split input -> tools/input/input-***.txt
@@ -185,8 +185,8 @@ Request (JSON):
 	"job_id": "1694640000",
 	"input_uris": "1694640000/input/input-001.txt,1694640000/input/input-002.txt",
 	"n_reducers": "4",
-	"map_bin_uri": "my_map",
-	"reduce_bin_uri": "my_reduce"
+	"map_bin_uri": "my_map.{cc,cpp}",
+	"reduce_bin_uri": "my_reduce.{cc,cpp}"
 }
 ```
 
@@ -205,7 +205,7 @@ Response (JSON):
 ```
 
 Status endpoints:
-- To be finalized. For now, the Python client polls the filesystem for `final.txt`.
+- To be finalized. For now, the Python client polls the filesystem for `final*`.
 
 ---
 
@@ -217,7 +217,7 @@ Status endpoints:
 	- `<map_bin_name>` (as uploaded)
 	- `<reduce_bin_name>` (as uploaded)
 	- `intermediate/part-<m>-<r>.*` (implementation-defined)
-- `${BASE}/results/${job_id}/final.txt`
+- `${BASE}/results/${job_id}/final*`
 
 Ensure all nodes (master and workers) mount `${BASE}` at the same absolute path.
 
@@ -337,6 +337,7 @@ End-to-end flow: split input, SCP artifacts, HTTP submit, map→reduce execution
 Job lifecycle states and transitions: PENDING → MAPPING → SHUFFLING → REDUCING → FINALIZING → DONE/FAILED.
 
 <img width="2184" height="3840" alt="mermaid-ai-diagram-2025-09-15-025551" src="https://github.com/user-attachments/assets/9c6699d9-7828-466e-8148-8aa486cbdfd0" />
+
 
 
 
