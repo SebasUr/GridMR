@@ -171,6 +171,7 @@ Notes:
 - The CLI includes a wait-for-result loop to avoid race conditions.
 - If you see SSH/SCP permission errors, ensure your key file is `chmod 600` and the path is correct.
 - The client does not delete remote artifacts; manage retention on the server side.
+- **Contract:** The client must upload their map.{cc,cpp} and reduce.{cc,cpp} code and the output must be in the format {key}\t{value}
 
 ---
 
@@ -262,8 +263,12 @@ Production deployment is intended for standard EC2 instances (no Docker in prod)
 - Credentials
 	- Do not store private keys in the repository. Use a secure path (e.g., `~/.ssh/key.pem`) and proper permissions.
 
-The `deployment/` folder contains initial Terraform/script scaffolding; finalize instance sizing, AMIs, networking, and IAM per your environment.
-
+The `deployment/` folder contains initial Terraform/script scaffolding; finalize instance sizing, AMIs, networking, and IAM per your environment. Running the following will up the entire cluster.
+```bash
+cd deployment
+terraform init
+terraform apply
+```
 ---
 
 ## Configuration
@@ -337,6 +342,7 @@ End-to-end flow: split input, SCP artifacts, HTTP submit, map→reduce execution
 Job lifecycle states and transitions: PENDING → MAPPING → SHUFFLING → REDUCING → FINALIZING → DONE/FAILED.
 
 <img width="2184" height="3840" alt="mermaid-ai-diagram-2025-09-15-025551" src="https://github.com/user-attachments/assets/9c6699d9-7828-466e-8148-8aa486cbdfd0" />
+
 
 
 
