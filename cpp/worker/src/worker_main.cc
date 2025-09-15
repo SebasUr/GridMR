@@ -43,7 +43,7 @@ class WorkerClient {
   explicit WorkerClient(std::shared_ptr<Channel> channel)
       : stub_(ControlService::NewStub(channel)) {}
 
-  void Run() {
+    void Run() {
     ClientContext ctx;
 
     // Abrimos stream bidireccional entre el worker y master.
@@ -79,10 +79,10 @@ class WorkerClient {
 
     // Hilo de heartbeats periódicos para evitar expiración por falta de latidos
     std::thread hb([&]{
-      while (running.load()) {
+    while (running.load()) {
         WorkerToMaster hbmsg;
         auto* hb = hbmsg.mutable_heartbeat();
-        hb->set_worker_id(wid); // usar el mismo worker_id que en INFO
+        hb->set_worker_id(wid);
         float cpu = get_cpu_usage();
         float ram = get_ram_usage();
         hb->set_cpu_usage(cpu);
@@ -93,7 +93,7 @@ class WorkerClient {
         log_msg(std::string("HB sent: cpu=") + std::to_string(cpu) + "% ram=" + std::to_string(ram) + "% ts=" + std::to_string(now_ms));
         { std::lock_guard<std::mutex> lk(write_mu); stream->Write(hbmsg); }
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-      }
+    }
     });
 
     // El worker escucha en loop tareas asignadas por el master.
@@ -176,7 +176,7 @@ class WorkerClient {
     if (hb.joinable()) hb.join();
     Status s = stream->Finish();
     if (!s.ok()) log_msg(std::string("Stream finished with error: ") + s.error_message());
-  }
+    }
 
  private:
   std::unique_ptr<ControlService::Stub> stub_;
