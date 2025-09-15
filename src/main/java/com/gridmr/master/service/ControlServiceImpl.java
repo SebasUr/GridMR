@@ -141,6 +141,8 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
         state.submitTasks(tasks);
         System.out.println("Enqueued " + tasks.size() + " MAP tasks for job " + jobId);
+    // Intento inmediato de asignación global (menos cargado primero)
+    tryAssignAll();
     }
 
     @Override
@@ -204,8 +206,8 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
 
                 Heartbeat synthetic = Heartbeat.newBuilder()
                         .setWorkerId(workerId)
-                        .setCpuUsage(100f)
-                        .setRamUsage(100f)
+                        .setCpuUsage(0f)   // considerar nuevo worker como libre inicialmente
+                        .setRamUsage(0f)
                         .setTimestamp(Instant.now().toEpochMilli())
                         .build();
                 state.updateHeartbeat(synthetic);

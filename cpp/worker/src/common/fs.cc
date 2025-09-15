@@ -34,9 +34,8 @@ static bool is_file_uri(const std::string& url){
 }
 
 static std::string resolve_local_path(const std::string& uri){
-  if (is_file_uri(uri)) return uri.substr(7); // strip file://
-  if (!uri.empty() && uri[0] == '/') return uri; // absolute
-  // Treat as relative to SHARED_DATA_ROOT
+  if (is_file_uri(uri)) return uri.substr(7); 
+  if (!uri.empty() && uri[0] == '/') return uri; 
   return shared_root() + "/" + uri;
 }
 
@@ -58,7 +57,8 @@ bool upload_file_to_fs(const std::string& local_path, const std::string& dest_pa
   if (dest_path.rfind("/", 0) != 0) {
     dst = shared_root() + "/" + dest_path;
   }
-  // Ensure parent dir exists via mkdir -p
+
+  // asegurar existencia
   std::string mkdirCmd = std::string("mkdir -p '") + dst.substr(0, dst.find_last_of('/')) + "'";
   std::system(mkdirCmd.c_str());
   std::string cmd = std::string("cp -f -- '") + local_path + "' '" + dst + "'";
