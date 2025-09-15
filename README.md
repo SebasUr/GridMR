@@ -111,6 +111,12 @@ Location: `src/main/java/com/gridmr/master`
 - `util/Env`
 	- Centralized configuration reader (env vars and defaults).
 
+ <img width="760" height="732" alt="image" src="https://github.com/user-attachments/assets/eaf0a0a4-b290-4372-b52d-9ce2ffc22063" />
+
+ ServiceImpl Diagram
+<img width="1632" height="850" alt="image" src="https://github.com/user-attachments/assets/0cb1beba-5e25-4a92-8860-4bf5a0576b5b" />
+
+
 ---
 ### Scheduler and Worker Manager: Deep Dive
 
@@ -160,6 +166,12 @@ Location: `cpp/worker`
 	- `map.cc`, `reduce.cc` demonstrate the stdin/stdout contract. You can build your own and upload them instead.
 
 Worker executes user-provided functions, piping input from stdin and capturing stdout to files.
+
+General Code Diagram 
+<img width="1632" height="898" alt="image" src="https://github.com/user-attachments/assets/1351121a-5d1a-4143-ab75-499f63c3832e" />
+Communication with master
+<img width="801" height="898" alt="image" src="https://github.com/user-attachments/assets/91ce5691-3a6d-4b32-8614-ab9f22598a35" />
+
 
 ---
 
@@ -342,6 +354,11 @@ GRIDMR_PEM_FILE=/home/you/.ssh/gridmr.pem
 
 Short, visual overview of the platform. Paste your Mermaid code or images in each placeholder below.
 
+### 0) Shared Filesystem 
+
+<img width="1160" height="778" alt="image" src="https://github.com/user-attachments/assets/750d2193-c371-499d-972d-a0bcb86741b2" />
+
+
 ### 1) System Context Diagram (C4 L1)
 High-level view of the User, Client CLI, Master, Workers, and Shared FS within AWS networking boundaries.
 
@@ -373,6 +390,7 @@ End-to-end flow: split input, SCP artifacts, HTTP submit, map→reduce execution
 Job lifecycle states and transitions: PENDING → MAPPING → SHUFFLING → REDUCING → FINALIZING → DONE/FAILED.
 
 <img width="2184" height="3840" alt="mermaid-ai-diagram-2025-09-15-025551" src="https://github.com/user-attachments/assets/9c6699d9-7828-466e-8148-8aa486cbdfd0" />
+
 
 
 
