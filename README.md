@@ -148,6 +148,9 @@ This section documents how tasks are assigned, when reducers are scheduled, and 
 	- If no heartbeat arrives within `HEARTBEAT_TIMEOUT_MS` (default 15000ms), the worker is considered expired: its in-flight task is re-queued, the worker is removed from active clients, and its busy flag cleared.
 	- gRPC stream errors or completion trigger the same cleanup and requeue logic.
 
+- gRPC Communication Protocol
+<img width="912" height="583" alt="image" src="https://github.com/user-attachments/assets/dba8d854-b5c1-4963-8a60-59882642d38c" />
+
 ---
 
 ## Worker Runtime (C++)
@@ -390,6 +393,7 @@ End-to-end flow: split input, SCP artifacts, HTTP submit, map→reduce execution
 Job lifecycle states and transitions: PENDING → MAPPING → SHUFFLING → REDUCING → FINALIZING → DONE/FAILED.
 
 <img width="2184" height="3840" alt="mermaid-ai-diagram-2025-09-15-025551" src="https://github.com/user-attachments/assets/9c6699d9-7828-466e-8148-8aa486cbdfd0" />
+
 
 
 
