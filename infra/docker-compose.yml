@@ -1,0 +1,52 @@
+services:
+
+  master:
+    build:
+      context: ..
+      dockerfile: infra/master/Dockerfile
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+    environment:
+      MASTER_PORT: "50051"
+      SHARED_DATA_ROOT: "/shared"
+      MR_INPUT_URIS: "input/input-001.txt,input/input-002.txt"
+      MR_N_REDUCERS: "4"
+      MR_START_DELAY_MS: "5000"
+    # No host port mapping needed for gRPC; workers connect via the compose network
+    # Expose HTTP for job submission from host
+    ports:
+      - "8080:8080"
+    volumes:
+      - shared-data:/shared
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/worker/Dockerfile
+    depends_on:
+      master:
+        condition: service_started
+      seeder:
+        condition: service_completed_successfully
+    environment:
+      MASTER_HOST: master
+      MASTER_PORT: 50051
+      SHARED_DATA_ROOT: /shared
+      MAP_LOCAL_PREFIX: /shared
+    deploy:
+      replicas: 4
+    volumes:
+      - shared-data:/shared
+
+  seeder:
+    build:
+      context: ..
+      dockerfile: infra/seeder/Dockerfile
+    volumes:
+      - shared-data:/shared
+    command: sh -c "set -e; mkdir -p /shared/input; cp -fv /seed/*.txt /shared/input/ || true; cp -fv /seed/map.cc /shared/ || true; cp -fv /seed/reduce.cc /shared/ || true; echo 'Seeder done. Listing /shared:'; find /shared -maxdepth 2 -type f -print"
+    restart: "no"
+
+volumes:
+  shared-data:

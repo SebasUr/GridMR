@@ -1,0 +1,65 @@
+syntax = "proto3";
+package gridmr;
+
+option java_multiple_files = true;
+option java_package = "com.gridmr.proto";
+option java_outer_classname = "GridmrProto";
+
+message WorkerInfo {
+  string worker_id = 1;
+  string host = 2;
+  int32 cpu = 3;
+}
+
+message Heartbeat {
+  string worker_id = 1;
+  float cpu_usage = 2; 
+  float ram_usage = 3; 
+  int64 timestamp = 4; 
+}
+
+message AssignTask {
+  string task_id = 1;
+  string job_id = 2;
+  enum TaskType { MAP = 0; REDUCE = 1; }
+  TaskType type = 3;
+  repeated string split_uris = 4;
+  string binary_uri = 5;
+  int32 reducer_id = 6;
+  int32 n_reducers = 7;
+}
+
+message PartUploaded {
+  string job_id = 1;
+  int32 map_id = 2;
+  int32 partition_id = 3;
+  string uri = 4;
+}
+
+message TaskStatus {
+  string task_id = 1;
+  enum State { STARTED=0; PROGRESS=1; COMPLETED=2; FAILED=3; }
+  State state = 2;
+  float progress = 3;
+  string message = 4;
+}
+
+message WorkerToMaster {
+  oneof payload {
+    WorkerInfo info = 1;
+    TaskStatus status = 2;
+    PartUploaded part = 3;
+    Heartbeat heartbeat = 4;
+  }
+}
+
+message MasterToWorker {
+  oneof payload {
+    AssignTask assign = 1;
+    string control = 2;
+  }
+}
+
+service ControlService {
+  rpc WorkerStream(stream WorkerToMaster) returns (stream MasterToWorker);
+}
