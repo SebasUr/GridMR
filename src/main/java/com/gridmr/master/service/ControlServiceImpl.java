@@ -9,18 +9,10 @@ import java.util.*;
 import java.util.BitSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.*; // <-- añadido para ScheduledExecutorService
+import java.util.concurrent.*;
 
-/**
- * ControlServiceImpl:
- * - Gestiona el stream bidireccional con cada worker.
- * - Registra workers (INFO).
- * - Actualiza métricas (HEARTBEAT).
- * - Asigna tareas (MAP / REDUCE) desde la TaskQueue vía SchedulerState.
- * - Recibe estados (STATUS) y partes generadas (PART).
- */
 public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBase {
-    // Per-job context to support multiple concurrent jobs
+    
     private static final class JobContext {
         final String jobId;
         final List<String> mapInputSplits = new ArrayList<>();
@@ -31,8 +23,8 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         int nReducers = 1;
         String mapBinUri = "";
         String reduceBinUri = "";
-        final Map<Integer, BitSet> mapParts = new ConcurrentHashMap<>(); // mapId -> parts bitset
-    final BitSet reducersDone = new BitSet(); // reducers completados por id
+        final Map<Integer, BitSet> mapParts = new ConcurrentHashMap<>();
+    final BitSet reducersDone = new BitSet();
         volatile boolean mapsEnqueued = false;
         long createdAtMs = System.currentTimeMillis();
         int minWorkersToStart;
@@ -44,13 +36,10 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
 
     private final SchedulerState state;
 
-    // workerId -> stream para enviar MasterToWorker
     private final Map<String, StreamObserver<MasterToWorker>> clients = new ConcurrentHashMap<>();
 
-    // All jobs by id
     private final Map<String, JobContext> jobs = new ConcurrentHashMap<>();
 
-    // === NUEVO: tracking de heartbeats y tareas en vuelo ===
     private final Map<String, Long> workerLastHeartbeat = new ConcurrentHashMap<>();
     private final Map<String, AssignTask> inFlight = new ConcurrentHashMap<>();
     private final ScheduledExecutorService hbMonitor =
@@ -63,17 +52,14 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     private final long hbCheckPeriodMs = Long.parseLong(Env.getEnvOrDefault("HEARTBEAT_CHECK_PERIOD_MS", "3000"));
     private final long hbWarnStaleMs = Long.parseLong(Env.getEnvOrDefault("HEARTBEAT_LOG_STALE_MS", "5000"));
 
-    // Defaults for new jobs
     private int defaultMinWorkersToStart = Integer.parseInt(Env.getEnvOrDefault("MR_MIN_WORKERS", "3"));
     private long defaultStartDelayMs = Long.parseLong(Env.getEnvOrDefault("MR_START_DELAY_MS", "0"));
 
     public ControlServiceImpl(SchedulerState state) {
         this.state = state;
-        // No auto-start: job is submitted via HTTP
         startHeartbeatMonitor();
     }
 
-    // === Job submission API (called by HTTP layer) ===
     public synchronized String submitJob(List<String> inputUris,
                                          Integer nReducers,
                                          String mapBin,
@@ -85,7 +71,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         if (inputUris == null || inputUris.isEmpty()) {
             throw new IllegalArgumentException("inputUris vacío");
         }
-        // Sanitize quotes and trim
         List<String> cleanedInputs = new ArrayList<>();
         for (String raw : inputUris) {
             if (raw == null) continue;
@@ -95,7 +80,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             }
             cleanedInputs.add(s);
         }
-        // Validate URIs existence (local paths). HTTP URLs are allowed without check.
         String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
         for (String s : cleanedInputs) {
             if (s.isEmpty()) continue;
@@ -107,7 +91,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             }
         }
 
-    // Create context for this new job
     String jobId = java.util.UUID.randomUUID().toString();
     int mw = (minWorkers != null && minWorkers > 0) ? minWorkers : defaultMinWorkersToStart;
     long sd = (startDelayMsOverride != null && startDelayMsOverride >= 0) ? startDelayMsOverride : defaultStartDelayMs;
@@ -120,12 +103,10 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     jobs.put(jobId, ctx);
     System.out.println("Initialized MAP splits: " + ctx.totalMaps + " (simple) for job " + jobId);
 
-        // Set config
     maybeStartJobsIfReady();
     return jobId;
     }
 
-    /* Construye las tareas MAP iniciales y las encola */
     private void buildAndEnqueueMapTasks(String jobId, JobContext ctx) {
         List<AssignTask> tasks = new ArrayList<>();
         for (int i = 0; i < ctx.mapInputSplits.size(); i++) {
@@ -141,7 +122,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
         state.submitTasks(tasks);
         System.out.println("Enqueued " + tasks.size() + " MAP tasks for job " + jobId);
-    // Intento inmediato de asignación global (menos cargado primero)
     tryAssignAll();
     }
 
@@ -185,14 +165,12 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 responseObserver.onCompleted();
             }
 
-            /* Registro inicial del worker */
             private void handleInfo(WorkerInfo info, StreamObserver<MasterToWorker> obs) {
                 this.workerId = info.getWorkerId();
                 if (workerId == null || workerId.isEmpty()) {
                     System.err.println("Ignoring worker with empty worker_id");
                     return;
                 }
-                // Duplicado: si ya existe, limpiar previa conexión
                 StreamObserver<MasterToWorker> prev = clients.put(workerId, obs);
                 if (prev != null && prev != obs) {
                     AssignTask inflightPrev = inFlight.remove(workerId);
@@ -206,7 +184,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
 
                 Heartbeat synthetic = Heartbeat.newBuilder()
                         .setWorkerId(workerId)
-                        .setCpuUsage(0f)   // considerar nuevo worker como libre inicialmente
+                        .setCpuUsage(0f)
                         .setRamUsage(0f)
                         .setTimestamp(Instant.now().toEpochMilli())
                         .build();
@@ -214,17 +192,15 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 workerLastHeartbeat.put(workerId, synthetic.getTimestamp());
                 System.out.println("Worker connected: " + workerId + " cpu=" + info.getCpu());
                 maybeStartJobsIfReady();
-                tryAssign(workerId); // asignar inmediatamente
+                tryAssign(workerId);
             }
 
-            /* Actualización de métricas (dispara intento de asignación si está libre) */
             private void handleHeartbeat(Heartbeat hb) {
                 state.updateHeartbeat(hb);
                 workerLastHeartbeat.put(hb.getWorkerId(), hb.getTimestamp());
                 tryAssign(hb.getWorkerId());
             }
 
-            /* Procesa estados de tareas */
             private void handleStatus(TaskStatus st) {
                 if (workerId == null) return;
                 String msg = st.getMessage();
@@ -330,19 +306,16 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             // Sobrecarga: primero validar que todos los MAP completos y todas las partes subidas
             private synchronized void maybeScheduleReducers(String jobId, JobContext ctx) {
                 if (ctx.reducersScheduled) return;
-                if (ctx.mapsCompleted.get() < ctx.totalMaps) return; // aún faltan MAPs
-                // Validar que cada mapa tiene todas las partes registradas
+                if (ctx.mapsCompleted.get() < ctx.totalMaps) return;
                 for (int mid = 0; mid < ctx.totalMaps; mid++) {
                     BitSet bs = ctx.mapParts.get(mid);
                     if (bs == null || bs.cardinality() < ctx.nReducers) {
-                        return; // aún faltan uploads
+                        return;
                     }
                 }
-                // Todos listos -> construir reducers de este job
                 scheduleReducersInternal(jobId, ctx);
             }
 
-            // La lógica original de programación la movemos aquí
             private synchronized void scheduleReducersInternal(String jobId, JobContext ctx) {
                 if (ctx.reducersScheduled) return;
                 ctx.reducersScheduled = true;
@@ -372,21 +345,18 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         };
     }
 
-    /* Reencola una tarea (si no es null) */
     private void requeue(AssignTask t, String reason) {
         if (t == null) return;
         System.out.println("Requeue " + t.getTaskId() + " (" + reason + ")");
         state.submitTasks(List.of(t));
     }
 
-    /* Intenta asignar usando SchedulerState.tryAssignNext */
     private void tryAssign(String workerId) {
         if (workerId == null) return;
         AssignTask t = state.tryAssignNext(workerId);
         if (t == null) return;
         StreamObserver<MasterToWorker> obs = clients.get(workerId);
         if (obs == null) {
-            // Worker desapareció después de asignar: devolver
             state.submitTasks(List.of(t));
             return;
         }
@@ -398,7 +368,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     }
 
     private void tryAssignAll() {
-        // Ordena workers libres por menor carga (CPU/RAM) y reparte hasta agotar la cola
         List<String> ordered = state.freeWorkersOrdered();
         for (String wid : ordered) {
             if (!state.hasPending()) break;
@@ -407,7 +376,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
             if (t == null) break;
             StreamObserver<MasterToWorker> obs = clients.get(wid);
             if (obs == null) {
-                // No hay stream activo; devolver la tarea a la cola
                 state.submitTasks(List.of(t));
                 continue;
             }
@@ -419,7 +387,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
                 System.out.printf("Assigned %s to %s (type=%s splits=%d)%n",
                         t.getTaskId(), wid, t.getType(), t.getSplitUrisCount());
             } catch (Exception e) {
-                // Si falla el envío, liberar el worker y reencolar la tarea
                 inFlight.remove(wid);
                 state.markFinished(wid);
                 state.submitTasks(List.of(t));
@@ -427,23 +394,19 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
     }
 
-    // When all reducers complete, concatenate part-*.txt into final.txt for given job
     private synchronized void maybeConcatenateFinalFor(String jobId, JobContext ctx) {
         if (!ctx.reducersScheduled || ctx.finalConcatenated) return;
-        // Count reducers done by probing results existence
     String sharedRoot = Env.getEnvOrDefault("SHARED_DATA_ROOT", "/shared");
     String jobRoot = sharedRoot + "/results/" + jobId;
         try {
             java.nio.file.Path jobDir = java.nio.file.Paths.get(jobRoot);
             if (!java.nio.file.Files.isDirectory(jobDir)) return;
-            // We expect part-0.txt .. part-(nReducers-1).txt
             List<java.nio.file.Path> parts = new ArrayList<>();
             for (int i = 0; i < ctx.nReducers; i++) {
                 java.nio.file.Path p = jobDir.resolve("part-" + i + ".txt");
                 if (!java.nio.file.Files.exists(p)) return; // not yet
                 parts.add(p);
             }
-            // Concatenate in order
             java.nio.file.Path finalOut = jobDir.resolve("final.txt");
             try (java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(finalOut, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING))) {
                 byte[] buf = new byte[8192];
@@ -463,7 +426,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
     }
 
-    // === NUEVO: monitor de heartbeats ===
     private void startHeartbeatMonitor() {
         hbMonitor.scheduleAtFixedRate(this::scanHeartbeats, hbCheckPeriodMs, hbCheckPeriodMs, TimeUnit.MILLISECONDS);
         System.out.println("[HB] Monitor started timeout=" + hbTimeoutMs + "ms period=" + hbCheckPeriodMs + "ms");
@@ -489,7 +451,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         tryAssignAll();
     }
 
-    // Encola MAPs cuando: no encolados aún, alcanzado delay opcional y número mínimo de workers conectados
     private synchronized void maybeStartJobsIfReady() {
         long now = System.currentTimeMillis();
         int connected = clients.size();
@@ -504,7 +465,6 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         }
     }
 
-    // (Opcional) llamar en shutdown del servidor si tienes hook
     public void shutdown() {
         hbMonitor.shutdownNow();
     }

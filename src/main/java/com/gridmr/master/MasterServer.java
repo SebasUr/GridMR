@@ -9,9 +9,6 @@ import io.grpc.ServerBuilder;
 
 import java.io.IOException;
 
-/**
- * Minimal gRPC Master that wires the ControlService and delegates task scheduling.
- */
 public class MasterServer {
 
     private final int port;

@@ -92,4 +92,4 @@ std::string do_reduce_collect_output(const std::string& binary_uri, int split_co
   return dest;
 }
 
-} // namespace gridmr_worker
+}

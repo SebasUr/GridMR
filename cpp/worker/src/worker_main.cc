@@ -34,7 +34,6 @@ using gridmr::TaskStatus;
 
 using namespace gridmr_worker;
 
-// Use shared sysmetrics helpers
 static inline float get_cpu_usage() { return sys_cpu_usage_percent(); }
 static inline float get_ram_usage() { return sys_ram_usage_percent(); }
 
@@ -46,19 +45,10 @@ class WorkerClient {
     void Run() {
     ClientContext ctx;
 
-    // Abrimos stream bidireccional entre el worker y master.
     auto stream = std::shared_ptr<ClientReaderWriter<WorkerToMaster, MasterToWorker>>(stub_->WorkerStream(&ctx));
 
-    // Sincronización para todas las escrituras al stream (Write no reentrante desde múltiples hilos)
     std::mutex write_mu;
     std::atomic<bool> running{true};
-
-    /* Explicación
-    * Se envia mensaje de identificación Hello con
-    * worker_id
-    * host
-    * cpu
-    */
 
     log_init();
     WorkerToMaster hello;
@@ -77,7 +67,6 @@ class WorkerClient {
     log_msg(std::string("INFO sent: worker_id=") + wid + " host=" + host + " cpu=1");
     { std::lock_guard<std::mutex> lk(write_mu); stream->Write(hello); }
 
-    // Hilo de heartbeats periódicos para evitar expiración por falta de latidos
     std::thread hb([&]{
     while (running.load()) {
         WorkerToMaster hbmsg;
@@ -96,34 +85,26 @@ class WorkerClient {
     }
     });
 
-    // El worker escucha en loop tareas asignadas por el master.
     MasterToWorker msg;
     while (stream->Read(&msg)) {
 
-        // Si tiene asignación
         if (msg.has_assign()) {
 
-            // Mensaje tipo AssignTask (definido en el proto)
             const AssignTask& t = msg.assign();
             log_msg(std::string("Received task ") + t.task_id() + " type=" + std::to_string(t.type()));
 
-            // Si la tarea es MAP y tiene splits
             if (t.type() == AssignTask::MAP && t.split_uris_size() > 0) {
 
-                // Por cada split llamamos a do_map (mapper.cc)
                 for (int i = 0; i < t.split_uris_size(); ++i) {
-                    // Pasamos uris. Contenido de t, definido en gridmr.proto
                     do_map(t.split_uris(i), t.binary_uri(), t.reducer_id(), t.n_reducers());
                 }
 
-                // Creamos los archivos locales para cada split
                 int R = std::max(1, t.n_reducers());
                 for (int pid = 0; pid < R; ++pid) {
                 std::string local = "/tmp/to-reduce-input-" + std::to_string(pid) + ".txt";
                 std::string root = envOr("SHARED_DATA_ROOT", "/shared");
                 std::string dest = root + std::string("/intermediate/") + t.job_id() + "/part-" + std::to_string(pid) + "-" + t.task_id() + ".txt";
 
-                // Copiamos a shared FS y notificamos al master
                 if (upload_file_to_fs(local, dest)) {
                     WorkerToMaster partMsg;
                     auto *p = partMsg.mutable_part();
@@ -136,7 +117,6 @@ class WorkerClient {
                     }   
                 }
 
-                // Finalmente preparamos un mensaje de tarea completada
                 WorkerToMaster statusMsg;
                 TaskStatus* st = statusMsg.mutable_status();
                 st->set_task_id(t.task_id());
@@ -147,17 +127,14 @@ class WorkerClient {
                 log_msg(std::string("Completed MAP task ") + t.task_id());
             }
 
-            // En el caso de que la tarea sea REDUCE
             if (t.type() == AssignTask::REDUCE && t.split_uris_size() > 0) {
 
-                // Copiamos los splits
                 for (int i = 0; i < t.split_uris_size(); ++i) {
                     std::string in = t.split_uris(i);
                     std::string dest = std::string("/tmp/reduce-input-") + std::to_string(i) + ".txt";
                     download_url_to_file(in, dest);
                 }
 
-                // Ejecutamos el reducer y se recoge la URI del resultado
                 std::string resultUri = do_reduce_collect_output(t.binary_uri(), t.split_uris_size(), t.reducer_id(), t.job_id(), t.split_uris(0));
                 WorkerToMaster statusMsg;
                 TaskStatus* st = statusMsg.mutable_status();
@@ -171,7 +148,6 @@ class WorkerClient {
         }
     }
 
-    // Finalizamos el stream
     running.store(false);
     if (hb.joinable()) hb.join();
     Status s = stream->Finish();
@@ -184,13 +160,11 @@ class WorkerClient {
 
 int main(){
 
-    // Buscamos el host y el puerto del master y se crea un canal gRPC.
     std::string host = envOr("MASTER_HOST", "localhost");
     std::string port = envOr("MASTER_PORT", "50051");
     std::string target = host + ":" + port;
     auto channel = grpc::CreateChannel(target, grpc::InsecureChannelCredentials());
 
-    // Intentamos conectarnos al canal gRPC, no arranca hasta que el master esté listo.
     int attempts = 0;
     while (true) {
         auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(5);
@@ -200,8 +174,7 @@ int main(){
         std::this_thread::sleep_for(std::chrono::seconds(std::min(5, attempts)));
     }
 
-    // Creamos un objeto WorkerClient con el canal gRPC.
     WorkerClient c(channel);
-    c.Run(); // Ciclo principal de vida del worker.
+    c.Run();
     return 0;
 }

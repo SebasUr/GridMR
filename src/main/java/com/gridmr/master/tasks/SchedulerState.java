@@ -12,7 +12,7 @@ public class SchedulerState {
     private final TaskQueue taskQueue = new TaskQueue();
     private final Scheduler scheduler = new Scheduler(workerManager);
 
-    // workerId -> tarea en ejecución
+    
     private final Map<String, AssignTask> running = new ConcurrentHashMap<>();
 
     public SchedulerState() {}

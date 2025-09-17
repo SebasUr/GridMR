@@ -57,10 +57,10 @@ public class HttpJobServer {
             if (ctype.contains("application/x-www-form-urlencoded")) {
                 form.putAll(parseFormUrlencoded(body));
             } else if (ctype.contains("application/json")) {
-                // Very naive JSON parser for flat string/number/bool fields
+                
                 form.putAll(parseNaiveJson(body));
             } else {
-                // Try to parse as key=value lines or fallback to query-like
+                
                 form.putAll(parseKeyValueLines(body));
             }
 
@@ -102,7 +102,7 @@ public class HttpJobServer {
             Map<String,String> m = new HashMap<>();
             String t = s.trim();
             if (t.startsWith("{") && t.endsWith("}")) t = t.substring(1, t.length()-1);
-            // Split into top-level key:value pairs by commas not inside quotes
+            
             List<String> parts = new ArrayList<>();
             StringBuilder cur = new StringBuilder();
             boolean inStr = false; char q = '\0';
@@ -120,7 +120,7 @@ public class HttpJobServer {
             if (cur.length() > 0) parts.add(cur.toString());
             for (String part : parts) {
                 String pp = part;
-                // split on first colon not inside quotes
+                
                 int cpos = -1; inStr = false; q='\0';
                 for (int i = 0; i < pp.length(); i++) {
                     char ch = pp.charAt(i);

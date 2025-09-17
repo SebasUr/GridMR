@@ -102,4 +102,4 @@ void do_map(const std::string& uri, const std::string& binary_uri, int /*reducer
   }
 }
 
-} // namespace gridmr_worker
+}

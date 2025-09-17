@@ -6,16 +6,13 @@ import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
 
-/**
- * WorkerManager mantiene el estado de los workers y permite listarlos ordenados por disponibilidad.
- */
 public class WorkerManager {
     private static final float CPU_WEIGHT = 0.7f;
     private static final float RAM_WEIGHT = 0.3f;
 
     private final Map<String, Heartbeat> workerStates = new ConcurrentHashMap<>();
 
-    // Actualiza el estado de un worker con Heartbeat
+    
     public void update(Heartbeat hb) {
         workerStates.put(hb.getWorkerId(), hb);
     }
@@ -28,14 +25,14 @@ public class WorkerManager {
         return workerStates.get(workerId);
     }
 
-    // Devuelve una lista de workers ordenados por disponibilidad (más libre primero)
+    
     public List<Heartbeat> getWorkersByAvailability() {
         List<Heartbeat> workers = new ArrayList<>(workerStates.values());
         workers.sort((a,b) -> {
-            // Heurística ponderada: menor carga = más libre
+            
             float sa = CPU_WEIGHT * a.getCpuUsage() + RAM_WEIGHT * a.getRamUsage();
             float sb = CPU_WEIGHT * b.getCpuUsage() + RAM_WEIGHT * b.getRamUsage();
-            return Float.compare(sa, sb); // menor score = más libre
+            return Float.compare(sa, sb); 
         });
         return workers;
     }
