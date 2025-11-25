@@ -24,7 +24,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
         String mapBinUri = "";
         String reduceBinUri = "";
         final Map<Integer, BitSet> mapParts = new ConcurrentHashMap<>();
-    final BitSet reducersDone = new BitSet();
+        final BitSet reducersDone = new BitSet();
         volatile boolean mapsEnqueued = false;
         long createdAtMs = System.currentTimeMillis();
         int minWorkersToStart;
@@ -104,7 +104,7 @@ public class ControlServiceImpl extends ControlServiceGrpc.ControlServiceImplBas
     System.out.println("Initialized MAP splits: " + ctx.totalMaps + " (simple) for job " + jobId);
 
     maybeStartJobsIfReady();
-    return jobId;
+        return jobId;
     }
 
     private void buildAndEnqueueMapTasks(String jobId, JobContext ctx) {

@@ -30,11 +30,11 @@ public class MasterServer {
         int httpPort = Integer.parseInt(Env.getEnvOrDefault("MASTER_HTTP_PORT", "8080"));
         http = new HttpJobServer(control, httpPort);
         http.start();
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.err.println("Shutting down master...");
-                MasterServer.this.stop();
-                System.err.println("Master shut down.");
-            }));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.err.println("Shutting down master...");
+            MasterServer.this.stop();
+            System.err.println("Master shut down.");
+        }));
     }
 
     public void stop() {
